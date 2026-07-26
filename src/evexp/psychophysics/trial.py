@@ -67,3 +67,7 @@ class TrialController:
                 self.run_trial(trial_index)
                 trial_index += 1
         return self.results
+
+    def voltages_over_trials(self) -> list[float]:
+        """Convenience accessor for plotting staircase convergence."""
+        return [r.applied_voltage for r in self.results]
