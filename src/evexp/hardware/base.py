@@ -9,7 +9,6 @@ class SensorSample:
 
 
 class DAQDevice(ABC):
-    """Herhangi bir çok-kanallı veri toplama cihazı için soyut arayüz."""
 
     @abstractmethod
     def start(self, sample_rate_hz: float) -> None: ...

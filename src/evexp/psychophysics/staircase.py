@@ -1,11 +1,13 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Literal
 
 
 @dataclass
 class StaircaseConfig:
+    """Configuration parameters for an adaptive staircase."""
+
     start_value: float
-    step_sizes: List[float]          # örn. [8, 4, 2, 1] — her reversal'da küçülür
+    step_sizes: List[float]          # Step size after each reversal.
     n_reversals_to_stop: int
     rule: Literal["1up2down", "3down1up"] = "1up2down"
     min_value: float = 0.0
@@ -13,7 +15,7 @@ class StaircaseConfig:
 
 
 class StaircaseController:
-    """1-up/2-down (~70.7%) veya 3-down/1-up (~79%) adaptif staircase."""
+    """Adaptive staircase controller supporting 1-up/2-down and 3-down/1-up rules."""
 
     def __init__(self, config: StaircaseConfig):
         self.cfg = config
@@ -27,16 +29,21 @@ class StaircaseController:
 
     @property
     def step_size(self) -> float:
+        """Return the current step size."""
         idx = min(self._step_idx, len(self.cfg.step_sizes) - 1)
         return self.cfg.step_sizes[idx]
 
     def update(self, correct: bool) -> float:
-        """Bir trial'ın sonucunu ver, bir sonraki stimulus değerini al."""
+        """Update the staircase and return the next stimulus value."""
+
         if self.finished:
             return self.value
 
+        # Number of consecutive correct responses required before stepping down.
         need = 2 if self.cfg.rule == "1up2down" else 3
+
         direction = None
+
         if correct:
             self._correct_streak += 1
             if self._correct_streak >= need:
@@ -47,19 +54,36 @@ class StaircaseController:
             self._correct_streak = 0
 
         if direction is not None:
+
+            # A reversal occurs when the staircase changes direction.
             if self._last_direction and direction != self._last_direction:
                 self.reversals.append(self.value)
                 self._step_idx += 1
-            self._last_direction = direction
-            self.value += self.step_size if direction == "up" else -self.step_size
-            self.value = min(self.cfg.max_value, max(self.cfg.min_value, self.value))
 
-        self.history.append({"value": self.value, "correct": correct, "direction": direction})
+            self._last_direction = direction
+
+            # Update the stimulus value while keeping it within the allowed range.
+            self.value += self.step_size if direction == "up" else -self.step_size
+            self.value = min(
+                self.cfg.max_value,
+                max(self.cfg.min_value, self.value),
+            )
+
+        self.history.append(
+            {
+                "value": self.value,
+                "correct": correct,
+                "direction": direction,
+            }
+        )
+
         if len(self.reversals) >= self.cfg.n_reversals_to_stop:
             self.finished = True
+
         return self.value
 
     @property
     def threshold_estimate(self) -> float:
+        """Estimate the threshold from the last reversal points."""
         tail = self.reversals[-6:] or self.reversals
         return sum(tail) / len(tail) if tail else float("nan")

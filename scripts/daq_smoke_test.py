@@ -2,7 +2,7 @@ import nidaqmx
 from nidaqmx.system import System
 
 system = System.local()
-print("Bulunan cihazlar:")
+print("devices found:")
 for device in system.devices:
     print(f"  {device.name}  —  {device.product_type}  —  simulated: {device.is_simulated}")
 
