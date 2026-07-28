@@ -1,6 +1,6 @@
-venv/
+data/*
+!data/.gitkeep
 __pycache__/
-*.pyc
-data/
-*.h5
-.vscode/
+.pytest_cache/
+venv/
+*.egg-info/
