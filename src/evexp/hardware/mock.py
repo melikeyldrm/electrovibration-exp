@@ -2,7 +2,7 @@ import math
 import random
 import time
 
-from evexp.hardware.base import DAQDevice, SensorSample
+from evexp.hardware.base import DAQDevice, SensorSample, StimulusOutput
 
 
 class MockDAQDevice(DAQDevice):
@@ -48,3 +48,44 @@ class MockDAQDevice(DAQDevice):
     def stop(self) -> None:
         """Stop the mock device."""
         self._running = False
+
+
+class MockStimulusOutput(StimulusOutput):
+    """Stand-in for the DAQ output -> amplifier -> touchscreen chain.
+
+    Records every on/off transition, so a simulated run can be checked for
+    the correct number of activations per trial without any hardware.
+    """
+
+    def __init__(self, verbose: bool = False):
+        self.verbose = verbose
+        self._amplitude_v = 0.0
+        self._active = False
+        self.events: list[tuple[float, str, float]] = []
+
+    def set_amplitude(self, volts: float) -> None:
+        self._amplitude_v = volts
+
+    def stimulus_on(self) -> None:
+        self._active = True
+        self._record("on")
+
+    def stimulus_off(self) -> None:
+        # Calling this while already off is harmless; it keeps the caller simple.
+        was_active = self._active
+        self._active = False
+        if was_active:
+            self._record("off")
+
+    @property
+    def is_active(self) -> bool:
+        return self._active
+
+    @property
+    def amplitude_v(self) -> float:
+        return self._amplitude_v
+
+    def _record(self, kind: str) -> None:
+        self.events.append((time.time(), kind, self._amplitude_v))
+        if self.verbose:
+            print(f"[stimulus] {kind:<3s} {self._amplitude_v:6.2f} V")

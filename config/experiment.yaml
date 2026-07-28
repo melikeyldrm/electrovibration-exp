@@ -1,0 +1,38 @@
+# Configuration for exp01: 2IFC absolute detection threshold for electrovibration.
+# Trial structure follows Vardar & Kuchenbecker (2021); the staircase rule and
+# the use of linear volts (rather than dB) follow Vardar et al. (2017).
+
+session:
+  experiment_id: exp01_2ifc_threshold
+  participant_id: sim_participant_01
+  output_dir: data
+
+staircase:
+  # Classic Levitt 1-up/2-down, converging on the ~70.7% correct point.
+  # Set to "3down1up" to target ~79.4% instead - no code change needed.
+  rule: 1up2down
+  start_value: 90.0
+  # Volts. The index advances on every reversal and saturates on the last entry,
+  # so [5, 5, 5, 1] would reproduce the "5 dB until three reversals, then 1 dB"
+  # schedule used in the literature.
+  step_sizes: [8.0, 4.0, 2.0, 1.0]
+  n_reversals_to_stop: 8
+  min_value: 0.0
+  # Above roughly this value the air gap between finger and screen breaks down,
+  # producing a qualitatively different sensation.
+  max_value: 150.0
+
+timing:
+  interval_s: 2.0
+  gap_s: 1.0
+  cursor_speed_mm_s: 50.0
+  cursor_travel_mm: 100.0
+
+simulation:
+  # Only used by the headless run; ignored once a real participant responds.
+  true_threshold_v: 50.0
+  slope: 0.15
+  max_trials: 300
+
+debug:
+  reveal_stimulus: true
