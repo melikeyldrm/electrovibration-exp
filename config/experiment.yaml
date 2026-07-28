@@ -21,12 +21,17 @@ staircase:
   # Above roughly this value the air gap between finger and screen breaks down,
   # producing a qualitatively different sensation.
   max_value: 150.0
+  max_consecutive_wrong_at_ceiling: 5
 
 timing:
   interval_s: 2.0
   gap_s: 1.0
   cursor_speed_mm_s: 50.0
   cursor_travel_mm: 100.0
+
+training:
+  n_trials: 3
+  voltage: 120.0
 
 simulation:
   # Only used by the headless run; ignored once a real participant responds.

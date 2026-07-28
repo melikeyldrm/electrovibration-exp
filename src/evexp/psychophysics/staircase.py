@@ -12,6 +12,8 @@ class StaircaseConfig:
     rule: Literal["1up2down", "3down1up"] = "1up2down"
     min_value: float = 0.0
     max_value: float = 1e9
+    max_consecutive_wrong_at_ceiling: int = 5 # Session aborts if this many consecutive wrong answers occur at max_value.
+                                              # Set to 0 to disable. Literature (Vardar & Kuchenbecker 2021) uses 3;
 
 
 class StaircaseController:
@@ -26,6 +28,8 @@ class StaircaseController:
         self.reversals: List[float] = []
         self.history: List[dict] = []
         self.finished = False
+        self._consecutive_wrong_at_ceiling = 0
+        self.aborted = False
 
     @property
     def step_size(self) -> float:
@@ -61,6 +65,18 @@ class StaircaseController:
                 self._step_idx += 1
 
             self._last_direction = direction
+
+            # Safety abort check: if the participant is repeatedly wrong at the
+        # voltage ceiling, continuing serves no purpose and wastes their time.
+        if not correct and self.value >= self.cfg.max_value:
+            self._consecutive_wrong_at_ceiling += 1
+            if (self.cfg.max_consecutive_wrong_at_ceiling > 0
+                    and self._consecutive_wrong_at_ceiling
+                    >= self.cfg.max_consecutive_wrong_at_ceiling):
+                self.aborted = True
+                self.finished = True
+        else:
+            self._consecutive_wrong_at_ceiling = 0
 
             # Update the stimulus value while keeping it within the allowed range.
             self.value += self.step_size if direction == "up" else -self.step_size

@@ -1,16 +1,12 @@
-"""Interactive 2IFC threshold session with a real participant.
+"""Interactive 2IFC threshold session with a real participant."""
 
-Uses the same Trial2IFC state machine and staircase as the headless run in
-run.py; only the response source differs - keyboard input instead of a
-simulated observer.
-"""
-
+import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
 
 import yaml
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QInputDialog
 
 from evexp.data.csv_logger import CSVTrialLogger
 from evexp.hardware.mock import MockStimulusOutput
@@ -29,32 +25,50 @@ def main():
 
     app = QApplication(sys.argv)
 
+    participant_id, ok = QInputDialog.getText(
+        None, "Session setup", "Participant ID:"
+    )
+    if not ok or not participant_id.strip():
+        print("No participant ID entered, exiting.")
+        sys.exit(0)
+    participant_id = participant_id.strip()
+
     staircase = StaircaseController(StaircaseConfig(**cfg["staircase"]))
     trial = Trial2IFC(
-        # Swap this for the real amplifier implementation once hardware is
-        # connected; nothing else in this file needs to change.
         stimulus=MockStimulusOutput(verbose=False),
         staircase=staircase,
         timing=TrialTiming(**cfg["timing"]),
+        training_voltage=cfg.get("training", {}).get("voltage", 120.0),
     )
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_path = Path(session_cfg["output_dir"]) / (
-        f"{session_cfg['experiment_id']}_{session_cfg['participant_id']}_{stamp}.csv"
+        f"{session_cfg['experiment_id']}_{participant_id}_{stamp}.csv"
     )
+
     logger = CSVTrialLogger(str(output_path))
     print(f"Logging trials to {output_path}")
 
-    participant = ParticipantWindow()
-    experimenter = ExperimenterWindow(
-        session_cfg["experiment_id"], session_cfg["participant_id"]
-    )
+    snapshot_path = output_path.with_suffix(".yaml")
+    shutil.copy(CONFIG_PATH, snapshot_path)
+    print(f"Config snapshot saved to {snapshot_path}")
+
     reveal = cfg.get("debug", {}).get("reveal_stimulus", False)
     if reveal:
         print("WARNING: reveal_stimulus is enabled - data from this session "
               "is not a valid threshold measurement.")
-    controller = SessionController(trial, participant, experimenter, logger,
-                                   reveal_stimulus=reveal)
+
+    participant = ParticipantWindow()
+    experimenter = ExperimenterWindow(
+        session_cfg["experiment_id"], participant_id
+    )
+
+    controller = SessionController(
+        trial, participant, experimenter, logger,
+        reveal_stimulus=reveal,
+        n_training=cfg.get("training", {}).get("n_trials", 0),
+    )
+
     experimenter.show()
     participant.show()
     participant.activateWindow()

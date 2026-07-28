@@ -8,7 +8,7 @@ electrovibration stimulus. The participant reports which interval contained it.
 import math
 import random
 import time
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import List, Optional
 
@@ -40,12 +40,13 @@ class TrialResult:
     """Record of a single completed 2IFC trial."""
     trial_index: int
     applied_voltage: float
-    stimulus_interval: int   # 1 or 2 - which interval carried the stimulus
-    response_interval: int   # 1 or 2 - what the participant reported
+    stimulus_interval: int    # 1 or 2 - which interval carried the stimulus
+    response_interval: int    # 1 or 2 - what the participant reported
     correct: bool
-    reversal: bool           # did this response produce a staircase reversal
+    reversal: bool            # did this response produce a staircase reversal
     timestamp: float
     response_time_s: float
+    training: bool = False    # True for training trials; staircase not updated
 
 
 class Trial2IFC:
@@ -54,14 +55,10 @@ class Trial2IFC:
     READY -> INTERVAL_1 -> GAP -> INTERVAL_2 -> AWAITING_RESPONSE -> READY
 
     This class contains no GUI code and never waits. The caller drives it:
-    `start_trial()` begins a trial, `advance()` is called when the current
-    phase's timer expires, and `submit_response()` is called when the
+    start_trial() begins a trial, advance() is called when the current
+    phase's timer expires, and submit_response() is called when the
     participant presses 1 or 2. A PyQt front end wires these to QTimer and
     keyPressEvent; the headless simulation below calls them directly.
-
-    Keeping the sequencing free of GUI dependencies is what makes the whole
-    trial loop unit-testable, and it means adding a background sensor thread
-    later will not require restructuring any of this.
     """
 
     def __init__(
@@ -70,11 +67,13 @@ class Trial2IFC:
         staircase: StaircaseController,
         timing: Optional[TrialTiming] = None,
         rng: Optional[random.Random] = None,
+        training_voltage: float = 120.0,
     ):
         self.stimulus = stimulus
         self.staircase = staircase
         self.timing = timing or TrialTiming()
         self._rng = rng or random.Random()
+        self.training_voltage = training_voltage
 
         self.state = TrialState.READY
         self.trial_index = 0
@@ -83,6 +82,7 @@ class Trial2IFC:
         self._stimulus_interval = 1
         self._applied_voltage = 0.0
         self._response_open_t = 0.0
+        self._is_training = False
 
     @property
     def finished(self) -> bool:
@@ -99,19 +99,20 @@ class Trial2IFC:
         """Stimulus amplitude used in the current trial, in volts."""
         return self._applied_voltage
 
-    def start_trial(self) -> float:
+    def start_trial(self, training: bool = False) -> float:
         """Begin a trial and enter interval 1.
 
-        Returns the duration of interval 1 in seconds, so the caller can arm
-        a timer for it.
+        Returns the duration of interval 1 in seconds so the caller can arm
+        a timer for it. If training=True the staircase value is not used and
+        the result will not update the staircase.
         """
         if self.state is not TrialState.READY:
             raise RuntimeError(f"start_trial() called in state {self.state.name}")
 
-        self._applied_voltage = self.staircase.value
-        # Randomising which interval carries the stimulus is what makes the
-        # task forced-choice: the participant cannot be right by always
-        # answering the same way.
+        self._is_training = training
+        self._applied_voltage = (
+            self.training_voltage if training else self.staircase.value
+        )
         self._stimulus_interval = self._rng.choice([1, 2])
         self.stimulus.set_amplitude(self._applied_voltage)
 
@@ -144,19 +145,26 @@ class Trial2IFC:
         raise RuntimeError(f"advance() called in state {self.state.name}")
 
     def submit_response(self, response_interval: int) -> TrialResult:
-        """Score the participant's answer, update the staircase, end the trial."""
+        """Score the participant's answer, update the staircase, end the trial.
+
+        For training trials the staircase is not updated and reversal is always
+        False; the state machine returns to READY so the next trial can start.
+        """
         if self.state is not TrialState.AWAITING_RESPONSE:
-            raise RuntimeError(f"submit_response() called in state {self.state.name}")
+            raise RuntimeError(
+                f"submit_response() called in state {self.state.name}"
+            )
         if response_interval not in (1, 2):
             raise ValueError("response_interval must be 1 or 2")
 
         correct = response_interval == self._stimulus_interval
 
-        # The staircase does not report reversals directly, so compare the
-        # reversal count before and after to detect one.
-        reversals_before = len(self.staircase.reversals)
-        self.staircase.update(correct)
-        reversal = len(self.staircase.reversals) > reversals_before
+        if self._is_training:
+            reversal = False
+        else:
+            reversals_before = len(self.staircase.reversals)
+            self.staircase.update(correct)
+            reversal = len(self.staircase.reversals) > reversals_before
 
         result = TrialResult(
             trial_index=self.trial_index,
@@ -167,10 +175,21 @@ class Trial2IFC:
             reversal=reversal,
             timestamp=time.time(),
             response_time_s=time.time() - self._response_open_t,
+            training=self._is_training,
         )
+        
         self.results.append(result)
-        self.trial_index += 1
-        self.state = TrialState.FINISHED if self.staircase.finished else TrialState.READY
+        if not self._is_training:
+            self.trial_index += 1
+
+        if self._is_training:
+            # Training trials never advance the staircase; always return to READY.
+            self.state = TrialState.READY
+        else:
+            self.state = (
+                TrialState.FINISHED if self.staircase.finished else TrialState.READY
+            )
+
         return result
 
     def _set_stimulus_for_interval(self, interval: int) -> None:
@@ -180,16 +199,17 @@ class Trial2IFC:
             self.stimulus.stimulus_off()
 
     def voltages_over_trials(self) -> List[float]:
-        """Convenience accessor for plotting staircase convergence."""
-        return [r.applied_voltage for r in self.results]
+        """Voltages for real trials only, in order, for convergence plotting."""
+        return [r.applied_voltage for r in self.results if not r.training]
 
 
 class SimulatedRunner:
     """Runs a full session headlessly against a simulated observer.
 
     Used for tests and for producing convergence plots without a participant.
-    Phase durations are not waited out; transitions fire immediately, so a
+    Phase durations are not waited out; transitions fire immediately so a
     session that would take 20 minutes with a person runs in milliseconds.
+    Training trials are skipped: the simulated observer needs no warm-up.
     """
 
     def __init__(
@@ -205,14 +225,10 @@ class SimulatedRunner:
         self._rng = rng or random.Random()
 
     def _observer_response(self, voltage: float, stimulus_interval: int) -> int:
-        """Pick an interval using a logistic psychometric function.
-
-        The 0.5 floor is the guess rate: in a two-interval task an observer
-        who feels nothing is still right half the time. The observer is given
-        the true interval only to convert a correct/incorrect draw into an
-        interval number; it does not use it to decide.
-        """
-        p_detect = 1.0 / (1.0 + math.exp(-self.slope * (voltage - self.true_threshold)))
+        """Pick an interval using a logistic psychometric function."""
+        p_detect = 1.0 / (
+            1.0 + math.exp(-self.slope * (voltage - self.true_threshold))
+        )
         p_correct = 0.5 + 0.5 * p_detect
         if self._rng.random() < p_correct:
             return stimulus_interval
@@ -220,10 +236,10 @@ class SimulatedRunner:
 
     def run_until_done(self, max_trials: int = 300) -> List[TrialResult]:
         while not self.trial.finished and self.trial.trial_index < max_trials:
-            self.trial.start_trial()
-            self.trial.advance()   # interval 1 -> gap
-            self.trial.advance()   # gap -> interval 2
-            self.trial.advance()   # interval 2 -> awaiting response
+            self.trial.start_trial(training=False)
+            self.trial.advance()
+            self.trial.advance()
+            self.trial.advance()
             response = self._observer_response(
                 self.trial.applied_voltage, self.trial.stimulus_interval
             )

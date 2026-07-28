@@ -84,3 +84,14 @@ class ExperimenterWindow(QWidget):
             f"{staircase.threshold_estimate:.1f} V "
             f"(mean of last {min(6, len(staircase.reversals))} reversals)"
         )
+
+    def announce_abort(self) -> None:
+        self._status.setText(
+            "SESSION ABORTED - stimulus not detected at ceiling voltage. "
+            "No threshold estimate recorded."
+        )
+
+    def announce_training_done(self) -> None:
+        self._status.setText(
+            "Training complete - real session starting on next SPACE press"
+        )

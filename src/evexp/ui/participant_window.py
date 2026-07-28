@@ -154,3 +154,19 @@ class ParticipantWindow(QWidget):
         elif self._input_mode == "response" and key in (Qt.Key_1, Qt.Key_2):
             self._input_mode = None
             self.responseGiven.emit(1 if key == Qt.Key_1 else 2)
+
+    def show_aborted(self) -> None:
+        self._input_mode = None
+        self._cue.clear()
+        self._message.setText("Session stopped")
+        self._hint.setText(
+            "The stimulus could not be detected at maximum voltage."
+        )
+
+    def show_ready_post_training(self) -> None:
+        self._input_mode = "start"
+        self._cue.clear()
+        self._message.setText("Ready")
+        self._hint.setText(
+            "Training complete — press SPACE to begin the real session"
+        )
