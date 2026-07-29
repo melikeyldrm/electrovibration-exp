@@ -55,3 +55,60 @@ def test_simulated_session_converges_near_true_threshold():
     results = runner.run_until_done()
     assert len(results) > 10
     assert abs(trial.staircase.threshold_estimate - 50.0) < 15
+
+def test_training_trial_does_not_update_staircase():
+    trial = make_trial()
+    voltage_before = trial.staircase.value
+    reversals_before = len(trial.staircase.reversals)
+
+    trial.start_trial(training=True)
+    trial.advance(); trial.advance(); trial.advance()
+    result = trial.submit_response(trial.stimulus_interval)
+
+    assert result.training is True
+    assert result.reversal is False
+    assert trial.staircase.value == voltage_before
+    assert len(trial.staircase.reversals) == reversals_before
+    assert trial.trial_index == 0  # index artmamali
+
+
+def test_training_trial_returns_to_ready_state():
+    trial = make_trial()
+    trial.start_trial(training=True)
+    trial.advance(); trial.advance(); trial.advance()
+    trial.submit_response(1)
+    assert trial.state is TrialState.READY
+
+
+def test_voltages_over_trials_excludes_training():
+    trial = make_trial()
+
+    # one training trial
+    trial.start_trial(training=True)
+    trial.advance(); trial.advance(); trial.advance()
+    trial.submit_response(trial.stimulus_interval)
+
+    # one real trial
+    trial.start_trial(training=False)
+    trial.advance(); trial.advance(); trial.advance()
+    trial.submit_response(trial.stimulus_interval)
+
+    voltages = trial.voltages_over_trials()
+    assert len(voltages) == 1
+    assert voltages[0] == 90.0  # staircase start value
+
+
+def test_submit_response_raises_in_wrong_state():
+    trial = make_trial()
+    import pytest as pt
+    with pt.raises(RuntimeError):
+        trial.submit_response(1)  # READY state'de cagrilmamali
+
+
+def test_invalid_response_raises():
+    trial = make_trial()
+    trial.start_trial()
+    trial.advance(); trial.advance(); trial.advance()
+    import pytest as pt
+    with pt.raises(ValueError):
+        trial.submit_response(3)  # sadece 1 veya 2 gecerli

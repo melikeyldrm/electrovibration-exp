@@ -64,6 +64,7 @@ class MockStimulusOutput(StimulusOutput):
         self.events: list[tuple[float, str, float]] = []
 
     def set_amplitude(self, volts: float) -> None:
+        """Set target stimulus voltage amplitude."""
         self._amplitude_v = volts
 
     def stimulus_on(self) -> None:
@@ -79,13 +80,16 @@ class MockStimulusOutput(StimulusOutput):
 
     @property
     def is_active(self) -> bool:
+        """Check if stimulus is currently active. read-only"""
         return self._active
 
     @property
     def amplitude_v(self) -> float:
+        """Get current amplitude in volts. read-only"""
         return self._amplitude_v
 
     def _record(self, kind: str) -> None:
+        """Record event timestamp, action, and voltage amplitude."""
         self.events.append((time.time(), kind, self._amplitude_v))
         if self.verbose:
             print(f"[stimulus] {kind:<3s} {self._amplitude_v:6.2f} V")

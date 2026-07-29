@@ -52,3 +52,38 @@ def test_abort_resets_on_correct_answer():
     sc.update(False)
     sc.update(False)
     assert not sc.aborted  # only 2 consecutive wrong after reset
+
+def test_voltage_does_not_exceed_max_value():
+    cfg = StaircaseConfig(start_value=148, step_sizes=[8, 4, 2, 1],
+                          n_reversals_to_stop=8, rule="1up2down",
+                          min_value=0, max_value=150)
+    sc = StaircaseController(cfg)
+    for _ in range(10):
+        sc.update(False)  # sürekli yukari
+    assert sc.value <= 150.0
+
+
+def test_voltage_does_not_go_below_min_value():
+    cfg = StaircaseConfig(start_value=2, step_sizes=[8, 4, 2, 1],
+                          n_reversals_to_stop=8, rule="1up2down",
+                          min_value=0, max_value=150)
+    sc = StaircaseController(cfg)
+    sc.update(True); sc.update(True)  # asagi
+    assert sc.value >= 0.0
+
+
+def test_3down1up_converges_near_threshold():
+    random.seed(42)
+    true_threshold = 50.0
+    cfg = StaircaseConfig(
+        start_value=90, step_sizes=[8, 4, 2, 1],
+        n_reversals_to_stop=8, rule="3down1up",
+        min_value=0, max_value=150,
+    )
+    sc = StaircaseController(cfg)
+    trials = 0
+    while not sc.finished and trials < 300:
+        correct = simulate_observer(sc.value, true_threshold)
+        sc.update(correct)
+        trials += 1
+    assert abs(sc.threshold_estimate - true_threshold) < 20

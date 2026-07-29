@@ -113,7 +113,7 @@ class Trial2IFC:
         self._applied_voltage = (
             self.training_voltage if training else self.staircase.value
         )
-        self._stimulus_interval = self._rng.choice([1, 2])
+        self._stimulus_interval = self._rng.choice([1, 2]) #choose stimulus ON interval randomly
         self.stimulus.set_amplitude(self._applied_voltage)
 
         self.state = TrialState.INTERVAL_1
