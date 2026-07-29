@@ -40,4 +40,4 @@ simulation:
   max_trials: 300
 
 debug:
-  reveal_stimulus: true
+  reveal_stimulus: true # to test 
