@@ -65,6 +65,9 @@ class StaircaseController:
                 self._step_idx += 1
 
             self._last_direction = direction
+            self.value += self.step_size if direction == "up" else -self.step_size
+            self.value = min(self.cfg.max_value, max(self.cfg.min_value, self.value))
+
 
             # Safety abort check: if the participant is repeatedly wrong at the
         # voltage ceiling, continuing serves no purpose and wastes their time.
@@ -78,12 +81,7 @@ class StaircaseController:
         else:
             self._consecutive_wrong_at_ceiling = 0
 
-            # Update the stimulus value while keeping it within the allowed range.
-            self.value += self.step_size if direction == "up" else -self.step_size
-            self.value = min(
-                self.cfg.max_value,
-                max(self.cfg.min_value, self.value),
-            )
+        
 
         self.history.append(
             {
