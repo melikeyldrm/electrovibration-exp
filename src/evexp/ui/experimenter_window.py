@@ -15,8 +15,9 @@ from typing import Optional
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor, QFont
-from PyQt5.QtWidgets import (QHBoxLayout, QHeaderView, QLabel, QTableWidget,
-                             QTableWidgetItem, QVBoxLayout, QWidget)
+from PyQt5.QtWidgets import (QApplication, QHBoxLayout, QHeaderView, QLabel,
+                             QMessageBox, QTableWidget, QTableWidgetItem,
+                             QVBoxLayout, QWidget)
 
 from evexp.psychophysics.staircase import StaircaseController
 from evexp.psychophysics.trial import TrialResult
@@ -137,3 +138,24 @@ class ExperimenterWindow(QWidget):
         self._status.setText(
             "Training complete - real session starting on next SPACE press"
         )
+    def keyPressEvent(self, event) -> None:
+        """Escape closes the session, with confirmation.
+
+        This lives here rather than on the participant window so that a
+        participant leaning on the keyboard cannot end a session mid-staircase.
+        """
+        if event.key() != Qt.Key_Escape:
+            super().keyPressEvent(event)
+            return
+        reply = QMessageBox.question(
+            self,
+            "End session",
+            "End the session now?\n\n"
+            "Trials completed so far are already saved, but the staircase "
+            "will not reach its stopping criterion, so no valid threshold "
+            "estimate will be produced.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            QApplication.quit()

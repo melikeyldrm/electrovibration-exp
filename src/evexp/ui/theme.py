@@ -2,45 +2,49 @@
 
 Kept in one place so the look can be tuned without touching widget logic.
 
-Design rationale: this is a perception experiment, so the priority is
-*not* drawing attention. Mid-dark neutral background (not pure black,
-which fatigues the eye over long sessions), desaturated accents, no
-flashing or sudden luminance changes, and large type so the participant
-can read prompts while their hand is on the screen.
+Design rationale: this is a perception experiment, so the priority is *not*
+drawing attention. Mid-dark neutral background (not pure black, which
+fatigues the eye over long sessions), desaturated accents, no flashing or
+sudden luminance changes, and large type - the participant reads these
+prompts with their hand on the screen, not from a desk.
 """
 
 # --- Colours ---------------------------------------------------------------
 
 BACKGROUND = "#232326"        # mid-dark neutral; avoids pure-black eye strain
-SURFACE = "#2c2c30"           # panels / track background, one step lighter
 TEXT_PRIMARY = "#e8e8ea"      # off-white; pure white is harsh on dark bg
 TEXT_SECONDARY = "#9a9aa0"    # hints, secondary instructions
+TEXT_EMPHASIS = "#f4f4f6"     # countdown and interval numerals
 
 # Pacing cursor the participant is asked to follow (circle).
 CURSOR = "#7fb8d4"            # desaturated blue; calm, clearly non-signalling
 
 # The participant's own tracked position (square). Deliberately a different
-# hue AND a different shape from the cursor, so the two are distinguishable
+# hue AND a different shape from the cursor, so the two stay distinguishable
 # without relying on colour discrimination.
 PARTICIPANT_MARKER = "#d9a95c"  # muted amber
 
 TRACK = "#3a3a40"             # the 100 mm travel path
-
-# Interval labels. No red/green: the participant answers with the 1 / 2 keys,
-# so the intervals are identified by number, which also sidesteps
-# red-green colour blindness entirely.
-INTERVAL_ACTIVE = "#e8e8ea"
-INTERVAL_IDLE = "#5a5a60"
+START_MARKER = "#5c5c66"      # notch at the start of the track
 
 # --- Typography ------------------------------------------------------------
 
 FONT_FAMILY = "Segoe UI"      # present on Windows; falls back gracefully
-FONT_SIZE_HUGE = 64           # interval number ("1" / "2")
-FONT_SIZE_LARGE = 28          # main prompts ("Place your finger")
-FONT_SIZE_BODY = 18           # hints ("Press 1 or 2")
+FONT_SIZE_NUMERAL = 96        # countdown digits and interval number
+FONT_SIZE_LARGE = 34          # main prompts
+FONT_SIZE_BODY = 22           # hints and instructions
 
 # --- Geometry --------------------------------------------------------------
 
-CURSOR_RADIUS_PX = 22
-MARKER_SIZE_PX = 34           # square side; roughly matches cursor diameter
-TRACK_HEIGHT_PX = 6
+CURSOR_RADIUS_PX = 26
+MARKER_SIZE_PX = 40           # square side; roughly matches cursor diameter
+TRACK_HEIGHT_PX = 8
+START_MARKER_HEIGHT_PX = 34   # vertical notch marking the start position
+
+# Fixed heights keep the track from drifting up and down as text changes
+# length. The participant physically touches the screen, so the track must
+# stay in one place across every phase. Each height is generous relative to
+# its font size: Qt clips descenders (g, y, p) if the label is sized tightly.
+MESSAGE_AREA_HEIGHT_PX = 100
+NUMERAL_AREA_HEIGHT_PX = 190
+HINT_AREA_HEIGHT_PX = 80

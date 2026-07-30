@@ -19,7 +19,7 @@ class SpeedEstimator:
     a speed of zero). Instead the speed is taken over a sliding window, which
     smooths the reading without adding lag the experimenter would notice.
     """
-
+    
     def __init__(self, window_size: int = 8, stale_after_s: float = 0.3):
         self._samples: Deque[PositionSample] = deque(maxlen=window_size)
         self._stale_after_s = stale_after_s

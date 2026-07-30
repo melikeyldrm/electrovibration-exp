@@ -71,7 +71,7 @@ class SessionController(QObject):
         label = "Training" if training else f"trial {self.trial.trial_index }"
         self._log_console(f"\n{label}  {self.trial.applied_voltage:6.3f} V")
         # start_trial() now enters PRE_INTERVAL_WAIT, not INTERVAL_1.
-        self.participant.show_pre_interval_wait(1)
+        self.participant.show_pre_interval_wait(1, duration_s)
         self._refresh_status()
         self._arm(duration_s)
 
@@ -92,7 +92,7 @@ class SessionController(QObject):
         elif state is TrialState.PRE_INTERVAL_WAIT:
             # Reached only on the way to interval 2; the wait before interval 1
             # is entered by _begin_trial above.
-            self.participant.show_pre_interval_wait(2)
+            self.participant.show_pre_interval_wait(2, duration_s)
         elif state is TrialState.INTERVAL_2:
             self.participant.show_interval(2, duration_s)
             self._announce_interval(2)
