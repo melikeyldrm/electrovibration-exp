@@ -1,6 +1,8 @@
 # Configuration for exp01: 2IFC absolute detection threshold for electrovibration.
-# Trial structure follows Vardar & Kuchenbecker (2021); the staircase rule and
-# the use of linear volts (rather than dB) follow Vardar et al. (2017).
+# Trial structure follows Vardar & Kuchenbecker (2021) for the base 2IFC paradigm;
+# the staircase rule (dB-domain 3-down/1-up), interval timing, and voltage safety
+# ceiling follow the protocol supplied by Umut, based on Vuik/Pool/Kenanoglu/Vardar
+# 2024/2025 (Impact of Whole-Body Vibrations on Electrovibration Perception).
 
 session:
   experiment_id: exp01_2ifc_threshold
@@ -8,36 +10,55 @@ session:
   output_dir: data
 
 staircase:
-  # Classic Levitt 1-up/2-down, converging on the ~70.7% correct point.
-  # Set to "3down1up" to target ~79.4% instead - no code change needed.
-  rule: 1up2down
-  start_value: 90.0
-  # Volts. The index advances on every reversal and saturates on the last entry,
-  # so [5, 5, 5, 1] would reproduce the "5 dB until three reversals, then 1 dB"
-  # schedule used in the literature.
-  step_sizes: [8.0, 4.0, 2.0, 1.0]
-  n_reversals_to_stop: 8
-  min_value: 0.0
-  # Above roughly this value the air gap between finger and screen breaks down,
-  # producing a qualitatively different sensation.
-  max_value: 150.0
+  # 3-down/1-up (Levitt 1971), targeting ~79.4% correct.
+  # "3 correct" need not be consecutive - see consecutive_required below.
+  rule: 3down1up
+  domain: db  # step_sizes are interpreted as dB steps (20*log10(Vp)), not volts.
+  # DAQ output starts at the safety ceiling and steps DOWN from there as the
+  # participant answers correctly - matches "50 V ceiling, decrease on correct"
+  # protocol structure, scaled here to our 2V DAQ-side ceiling (amplifier x50).
+  start_value: 2.0
+  # dB. Index advances on every reversal and saturates on the last entry:
+  # 5 dB steps until the first reversal, then 1 dB for the rest of the session.
+  step_sizes: [5.0, 1.0]
+  n_reversals_to_stop: 5
+  # Must be > 0 in db domain (log(0) is undefined). Session will never
+  # realistically approach this floor given the 2V ceiling and 5/1 dB steps.
+  min_value: 0.01
+  # Hard safety ceiling on the DAQ analog output. The amplifier multiplies this
+  # by 50x downstream, so this value must NEVER be exceeded regardless of
+  # staircase state.
+  max_value: 2.0
+  # If a wrong answer lands at the ceiling this many times in a row, abort -
+  # the participant isn't perceiving the max deliverable stimulus, continuing
+  # wastes their time.
   max_consecutive_wrong_at_ceiling: 5
+  # "gave three correct answers (not necessarily consecutive)": a wrong answer
+  # triggers an immediate up-step but does NOT reset the cumulative correct
+  # counter. Set to true to restore classic Levitt (correct streak must be
+  # consecutive) - no code change needed, only this flag.
+  consecutive_required: false
+  require_fine_stage_reversals: true
 
 timing:
-  interval_s: 2.0
-  gap_s: 1.0
+  # "Place your finger" wait screen, shown before EACH interval (both red and
+  # green), not just once per trial.
+  pre_interval_wait_s: 3.0
+  interval_s: 4.0
+  gap_s: 2.0
   cursor_speed_mm_s: 50.0
   cursor_travel_mm: 100.0
 
 training:
   n_trials: 3
-  voltage: 120.0
+  voltage: 2.0  # updated to match the new 2V DAQ-side scale
 
 simulation:
   # Only used by the headless run; ignored once a real participant responds.
-  true_threshold_v: 50.0
-  slope: 0.15
+  # NOTE: expressed in the new 0-2V DAQ scale, not the old 0-150V scale.
+  true_threshold_v: 1.2
+  slope: 15.0
   max_trials: 300
 
 debug:
-  reveal_stimulus: true # to test 
+  reveal_stimulus: true # to test

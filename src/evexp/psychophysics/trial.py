@@ -3,6 +3,9 @@
 Trial structure follows Vardar & Kuchenbecker (2021): two temporal intervals
 of equal duration separated by a silent gap, exactly one of which carries the
 electrovibration stimulus. The participant reports which interval contained it.
+
+Each interval is preceded by a "place your finger" wait phase (PRE_INTERVAL_WAIT),
+per protocol supplied by Umut.
 """
 
 import math
@@ -19,6 +22,7 @@ from evexp.psychophysics.staircase import StaircaseController
 class TrialState(Enum):
     """Phases a single trial passes through, in order."""
     READY = auto()
+    PRE_INTERVAL_WAIT = auto()  # "place your finger" — shown before each interval
     INTERVAL_1 = auto()
     GAP = auto()
     INTERVAL_2 = auto()
@@ -29,8 +33,9 @@ class TrialState(Enum):
 @dataclass
 class TrialTiming:
     """Timing and pacing parameters shared by every trial in a session."""
-    interval_s: float = 2.0
-    gap_s: float = 1.0
+    pre_interval_wait_s: float = 3.0  # "place your finger", before each interval
+    interval_s: float = 4.0
+    gap_s: float = 2.0
     cursor_speed_mm_s: float = 50.0
     cursor_travel_mm: float = 100.0
 
@@ -52,7 +57,8 @@ class TrialResult:
 class Trial2IFC:
     """Sequences 2IFC trials as a non-blocking state machine.
 
-    READY -> INTERVAL_1 -> GAP -> INTERVAL_2 -> AWAITING_RESPONSE -> READY
+    READY -> PRE_INTERVAL_WAIT -> INTERVAL_1 -> GAP -> PRE_INTERVAL_WAIT
+          -> INTERVAL_2 -> AWAITING_RESPONSE -> READY
 
     This class contains no GUI code and never waits. The caller drives it:
     start_trial() begins a trial, advance() is called when the current
@@ -67,7 +73,7 @@ class Trial2IFC:
         staircase: StaircaseController,
         timing: Optional[TrialTiming] = None,
         rng: Optional[random.Random] = None,
-        training_voltage: float = 120.0,
+        training_voltage: float = 2.0,
     ):
         self.stimulus = stimulus
         self.staircase = staircase
@@ -83,6 +89,8 @@ class Trial2IFC:
         self._applied_voltage = 0.0
         self._response_open_t = 0.0
         self._is_training = False
+        # Which interval (1 or 2) the current PRE_INTERVAL_WAIT phase is for.
+        self._pending_interval = 1
 
     @property
     def finished(self) -> bool:
@@ -100,11 +108,11 @@ class Trial2IFC:
         return self._applied_voltage
 
     def start_trial(self, training: bool = False) -> float:
-        """Begin a trial and enter interval 1.
+        """Begin a trial and enter the pre-interval-1 wait phase.
 
-        Returns the duration of interval 1 in seconds so the caller can arm
-        a timer for it. If training=True the staircase value is not used and
-        the result will not update the staircase.
+        Returns the duration of the wait phase in seconds so the caller can
+        arm a timer for it. If training=True the staircase value is not used
+        and the result will not update the staircase.
         """
         if self.state is not TrialState.READY:
             raise RuntimeError(f"start_trial() called in state {self.state.name}")
@@ -113,12 +121,13 @@ class Trial2IFC:
         self._applied_voltage = (
             self.training_voltage if training else self.staircase.value
         )
-        self._stimulus_interval = self._rng.choice([1, 2]) #choose stimulus ON interval randomly
+        self._stimulus_interval = self._rng.choice([1, 2])  # choose stimulus ON interval randomly
         self.stimulus.set_amplitude(self._applied_voltage)
+        self.stimulus.stimulus_off()  # ensure no stimulus during the wait phase
 
-        self.state = TrialState.INTERVAL_1
-        self._set_stimulus_for_interval(1)
-        return self.timing.interval_s
+        self.state = TrialState.PRE_INTERVAL_WAIT
+        self._pending_interval = 1
+        return self.timing.pre_interval_wait_s
 
     def advance(self) -> Optional[float]:
         """Move to the next phase when the current phase's timer expires.
@@ -126,15 +135,24 @@ class Trial2IFC:
         Returns the duration of the new phase in seconds, or None once the
         trial is waiting for the participant's response (which is untimed).
         """
+        if self.state is TrialState.PRE_INTERVAL_WAIT:
+            if self._pending_interval == 1:
+                self.state = TrialState.INTERVAL_1
+                self._set_stimulus_for_interval(1)
+            else:
+                self.state = TrialState.INTERVAL_2
+                self._set_stimulus_for_interval(2)
+            return self.timing.interval_s
+
         if self.state is TrialState.INTERVAL_1:
             self.stimulus.stimulus_off()
             self.state = TrialState.GAP
             return self.timing.gap_s
 
         if self.state is TrialState.GAP:
-            self.state = TrialState.INTERVAL_2
-            self._set_stimulus_for_interval(2)
-            return self.timing.interval_s
+            self.state = TrialState.PRE_INTERVAL_WAIT
+            self._pending_interval = 2
+            return self.timing.pre_interval_wait_s
 
         if self.state is TrialState.INTERVAL_2:
             self.stimulus.stimulus_off()
@@ -177,7 +195,7 @@ class Trial2IFC:
             response_time_s=time.time() - self._response_open_t,
             training=self._is_training,
         )
-        
+
         self.results.append(result)
         if not self._is_training:
             self.trial_index += 1
@@ -237,9 +255,12 @@ class SimulatedRunner:
     def run_until_done(self, max_trials: int = 300) -> List[TrialResult]:
         while not self.trial.finished and self.trial.trial_index < max_trials:
             self.trial.start_trial(training=False)
-            self.trial.advance()
-            self.trial.advance()
-            self.trial.advance()
+            # Advance through every timed phase (wait/interval/gap/wait/interval)
+            # until the trial reaches the untimed AWAITING_RESPONSE phase,
+            # signalled by advance() returning None. Robust to the exact
+            # number of phases in the state machine.
+            while self.trial.advance() is not None:
+                pass
             response = self._observer_response(
                 self.trial.applied_voltage, self.trial.stimulus_interval
             )
