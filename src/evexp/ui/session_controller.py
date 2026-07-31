@@ -67,6 +67,8 @@ class SessionController(QObject):
 
     def _begin_trial(self) -> None:
         training = not self._training_done
+        if not training:
+            self.experimenter.clear_message()
         duration_s = self.trial.start_trial(training=training)
         label = "Training" if training else f"trial {self.trial.trial_index }"
         self._log_console(f"\n{label}  {self.trial.applied_voltage:6.3f} V")
@@ -125,7 +127,7 @@ class SessionController(QObject):
                 self.experimenter.announce_training_done()
             else:
                 self.participant.show_ready()
-                self._refresh_status()
+            self._refresh_status()
             return
 
         self.experimenter.add_result(result)
@@ -141,8 +143,9 @@ class SessionController(QObject):
             self.experimenter.announce_completion(self.trial.staircase)
         else:
             self.participant.show_ready()
-            self._refresh_status()
 
+        self._refresh_status()
+        
     def _poll_speed(self) -> None:
         """Sample the position source and update the experimenter's readout."""
         if self._position_source is None:

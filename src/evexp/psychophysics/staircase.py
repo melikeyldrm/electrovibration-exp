@@ -135,7 +135,7 @@ class StaircaseController:
             if self.cfg.require_fine_stage_reversals
             else 0
         )
-        if len(self.reversals) >= n_coarse_reversals_to_skip + self.cfg.n_reversals_to_stop:
+        if len(self.reversals) >= self.total_reversals_needed:
             self.finished = True
         return self.value
 

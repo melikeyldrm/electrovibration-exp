@@ -48,3 +48,31 @@ START_MARKER_HEIGHT_PX = 34   # vertical notch marking the start position
 MESSAGE_AREA_HEIGHT_PX = 100
 NUMERAL_AREA_HEIGHT_PX = 190
 HINT_AREA_HEIGHT_PX = 80
+
+# --- Experimenter console --------------------------------------------------
+# The console usually sits in the same room as the participant, so it is dark
+# for the same reason the participant screen is: a bright panel would spill
+# light across the setup. Denser and more saturated than the participant UI,
+# though - this one is meant to be read closely and scanned quickly.
+
+CONSOLE_BG = "#f0f2f7"
+CONSOLE_PANEL = "#ffffff"
+CONSOLE_PANEL_ALT = "#f6f8fc"     # alternating table rows
+CONSOLE_BORDER = "#d5dae3"
+CONSOLE_TEXT = "#1c2330"
+CONSOLE_LABEL = "#6b7382"       # small uppercase field labels
+CONSOLE_ACCENT = "#0a84d6"       # matches the participant cue colour
+
+CONSOLE_OK = "#1f8a5f"            # on-target speed, reversals
+CONSOLE_WARN = "#b0720c"          # drifting
+CONSOLE_BAD = "#c0392b"           # wrong answers, far off target
+
+CONSOLE_GRID = "#e2e7ef"
+CONSOLE_TRACE = "#0a84d6"
+CONSOLE_THRESHOLD = "#1f8a5f"
+
+CONSOLE_FONT = "Segoe UI"
+CONSOLE_MONO = "Consolas"
+CONSOLE_SIZE_VALUE = 17
+CONSOLE_SIZE_LABEL = 9
+CONSOLE_SIZE_BODY = 12
