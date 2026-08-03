@@ -9,6 +9,7 @@ and nothing in the UI changes.
 Mirrors the StimulusOutput / MockStimulusOutput pattern in hardware/base.py.
 """
 
+import threading
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -36,7 +37,8 @@ class PositionSource(ABC):
     def read(self) -> Optional[PositionSample]:
         """Return the latest sample, or None if no finger is detected.
 
-        Must not block: the UI calls this from a timer tick.
+        Must not block: it is called both from a UI timer and from the
+        acquisition thread.
         """
 
 
@@ -46,20 +48,29 @@ class ManualPositionSource(PositionSource):
     This is a genuine input rather than a canned trajectory: during a demo
     the marker moves because someone actually moves it, which is what makes
     the pacing feedback worth showing at all.
+
+    Written from the Qt thread and read from the acquisition thread, so the
+    stored sample is guarded. The lock is held only long enough to swap a
+    reference, which is far shorter than the interval between mouse events.
     """
 
     def __init__(self, travel_mm: float = 100.0):
         self.travel_mm = travel_mm
+        self._lock = threading.Lock()
         self._latest: Optional[PositionSample] = None
 
     def push(self, x_mm: float) -> None:
         """Called by the UI when the pointer moves over the track."""
         clamped = min(self.travel_mm, max(0.0, x_mm))
-        self._latest = PositionSample(t=time.perf_counter(), x_mm=clamped)
+        sample = PositionSample(t=time.perf_counter(), x_mm=clamped)
+        with self._lock:
+            self._latest = sample
 
     def clear(self) -> None:
         """Called when the pointer leaves the track: no finger detected."""
-        self._latest = None
+        with self._lock:
+            self._latest = None
 
     def read(self) -> Optional[PositionSample]:
-        return self._latest
+        with self._lock:
+            return self._latest

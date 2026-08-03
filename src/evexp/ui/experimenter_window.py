@@ -464,3 +464,8 @@ class ExperimenterWindow(QWidget):
         )
         if reply == QMessageBox.Yes:
             QApplication.quit()
+
+    def clear_message(self) -> None:
+        """Hide the announcement line.
+        """
+        self._message.setVisible(False)

@@ -8,7 +8,8 @@ import yaml
 from PyQt5.QtWidgets import QApplication
 
 from evexp.data.csv_logger import CSVTrialLogger
-from evexp.hardware.mock import MockStimulusOutput
+from evexp.hardware.acquisition import SensorAcquisition
+from evexp.hardware.mock import MockDAQDevice, MockStimulusOutput
 from evexp.hardware.position import ManualPositionSource
 from evexp.hardware.screen import ScreenCalibration
 from evexp.psychophysics.staircase import StaircaseConfig, StaircaseController
@@ -114,6 +115,30 @@ def main():
     # the touch sensor works - the UI and speed readout are unaffected.
     position_source = ManualPositionSource(travel_mm=travel_mm)
     print("Position source: mouse (move the pointer along the cue track)")
+
+    # Continuous sensor acquisition, on its own thread. Nothing displays it
+    # yet; it runs from here so that the threading, the shutdown path and the
+    # timing diagnostics are exercised in every session rather than only once
+    # the real card arrives.
+    acq_cfg = cfg["acquisition"]
+    acquisition = SensorAcquisition(
+        device=MockDAQDevice(realtime=True),
+        position_source=position_source,
+        ring_seconds=acq_cfg.get("ring_seconds", 30.0),
+        chunk_samples=acq_cfg.get("chunk_samples") or None,
+    )
+    acquisition.start(sample_rate_hz=acq_cfg["sample_rate_hz"])
+    print(f"Acquisition: {len(acquisition.channels)} channels at "
+          f"{acquisition.sample_rate_hz:g} Hz (simulated)")
+
+    # Stopping from aboutToQuit rather than after app.exec_() so that the
+    # worker is joined on every exit path, including the window being closed
+    # and the Escape confirmation on the console.
+    def shutdown() -> None:
+        acquisition.stop()
+        print(acquisition.stats().describe())
+
+    app.aboutToQuit.connect(shutdown)
 
     participant = ParticipantWindow(
         calibration=calibration,

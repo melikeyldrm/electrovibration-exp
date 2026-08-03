@@ -92,6 +92,20 @@ timing:
   # any other value is a typo, and a typo here is invisible until analysis.
   speed_options_mm_s: [20.0, 50.0, 80.0]
 
+acquisition:
+  # Continuous sensor acquisition. 10 kHz is comfortable for this setup: the
+  # signals of interest sit below ~1 kHz, the Nano17's own bandwidth is a few
+  # kHz, and six channels at 10 kHz use well under a quarter of the
+  # PCIe-6321's 250 kS/s budget. It also oversamples enough to resolve onset
+  # transients and dF/dt rather than only satisfying Nyquist.
+  sample_rate_hz: 10000
+  # How much recent signal to keep in memory. Long enough to cut a whole
+  # trial out of after the fact; the session record is written separately.
+  ring_seconds: 30
+  # Samples per device read. Left empty to derive ~50 ms from the sample
+  # rate, which keeps the read loop at a rate Python sustains comfortably.
+  chunk_samples:
+
 training:
   n_trials: 3
   voltage: 2.0  # updated to match the new 2V DAQ-side scale
