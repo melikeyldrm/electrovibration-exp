@@ -19,13 +19,29 @@ TEXT_EMPHASIS = "#f4f4f6"     # countdown and interval numerals
 # Pacing cursor the participant is asked to follow (circle).
 CURSOR = "#7fb8d4"            # desaturated blue; calm, clearly non-signalling
 
-# The participant's own tracked position (square). Deliberately a different
-# hue AND a different shape from the cursor, so the two stay distinguishable
-# without relying on colour discrimination.
-PARTICIPANT_MARKER = "#d9a95c"  # muted amber
-
+# The participant's own tracked position (square). Its fill communicates
+# applied force (see FORCE_* below); TRACK and START_MARKER stay fixed.
 TRACK = "#3a3a40"             # the 100 mm travel path
 START_MARKER = "#5c5c66"      # notch at the start of the track
+
+# --- Force feedback ----------------------------------------------------
+# The square's fill encodes how the participant's applied force compares to
+# the target, on a single ordered scale: too little -> on target -> too much.
+# Deliberately not "green vs red vs amber for both directions" - two
+# out-of-range states sharing the same colour (amber) tell the participant
+# something is wrong but not which way to correct, which is worse than no
+# colour at all. Blue and red are also the pair least likely to be confused
+# under red-green colour blindness, and the built-in border-width cue below
+# does not depend on colour perception at all.
+FORCE_LOW = "#5b8fc7"          # pressing too lightly: cool blue
+FORCE_TARGET = "#5cad6e"       # in the target band: green
+FORCE_HIGH = "#c25b52"         # pressing too hard: warm red
+FORCE_UNKNOWN = "#6b6b72"      # no contact detected - neutral, not alarming
+
+# Marker border thickens with distance from target, as a second channel that
+# does not depend on colour discrimination at all.
+FORCE_BORDER_MIN_PX = 0.0
+FORCE_BORDER_MAX_PX = 7.0
 
 # --- Typography ------------------------------------------------------------
 

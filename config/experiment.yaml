@@ -92,6 +92,24 @@ timing:
   # any other value is a typo, and a typo here is invisible until analysis.
   speed_options_mm_s: [20.0, 50.0, 80.0]
 
+force:
+  # Target normal force and the feedback colour scale around it. The
+  # participant's position marker is blue below the band, green inside it,
+  # red above it; full_scale_n is the distance from target at which the
+  # colour is fully saturated (blue or red), not a hard cutoff.
+  target_n: 1.0
+  full_scale_n: 0.5
+  # Short moving average applied before colouring, in samples of the 20 Hz
+  # UI poll (5 samples = 250 ms). Without it, noise crossing a colour
+  # boundary would flicker the marker several times a second.
+  smoothing_samples: 5
+  # No force sensor yet. "mouse_y" lets the experimenter drive the applied
+  # force with the mouse's vertical position during development - drag up
+  # for more force, down for less - so the feedback colours can be exercised
+  # deliberately rather than waited on. Switch to "simulated" for a
+  # hands-off drifting signal, or "nano17" once the sensor is wired in.
+  source: mouse_y
+
 acquisition:
   # Continuous sensor acquisition. 10 kHz is comfortable for this setup: the
   # signals of interest sit below ~1 kHz, the Nano17's own bandwidth is a few

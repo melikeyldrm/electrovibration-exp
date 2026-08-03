@@ -9,7 +9,9 @@ from PyQt5.QtWidgets import QApplication
 
 from evexp.data.csv_logger import CSVTrialLogger
 from evexp.hardware.acquisition import SensorAcquisition
+from evexp.hardware.force import ManualForceSource, SimulatedForceSource
 from evexp.hardware.mock import MockDAQDevice, MockStimulusOutput
+from evexp.processing.force_feedback import ForceBands
 from evexp.hardware.position import ManualPositionSource
 from evexp.hardware.screen import ScreenCalibration
 from evexp.psychophysics.staircase import StaircaseConfig, StaircaseController
@@ -116,6 +118,28 @@ def main():
     position_source = ManualPositionSource(travel_mm=travel_mm)
     print("Position source: mouse (move the pointer along the cue track)")
 
+    # Force feedback. No sensor yet - the "mouse_y" option lets the applied
+    # force be driven deliberately during development (drag the mouse
+    # vertically over the track) instead of only ever showing the on-target
+    # colour. Swapping in a Nano17-backed source later is the only change
+    # needed; the UI and the colour mapping are unaffected.
+    force_cfg = cfg["force"]
+    force_bands = ForceBands(
+        target_n=force_cfg["target_n"],
+        full_scale_n=force_cfg["full_scale_n"],
+    )
+    force_source_kind = force_cfg.get("source", "simulated")
+    if force_source_kind == "mouse_y":
+        force_source = ManualForceSource(initial_n=force_bands.target_n)
+    elif force_source_kind == "simulated":
+        force_source = SimulatedForceSource(target_n=force_bands.target_n)
+    else:
+        raise ValueError(
+            f"unknown force.source {force_source_kind!r} in config; "
+            "expected 'mouse_y' or 'simulated' (nano17 not wired in yet)"
+        )
+    print(f"Force source: {force_source_kind}")
+
     # Continuous sensor acquisition, on its own thread. Nothing displays it
     # yet; it runs from here so that the threading, the shutdown path and the
     # timing diagnostics are exercised in every session rather than only once
@@ -143,6 +167,9 @@ def main():
     participant = ParticipantWindow(
         calibration=calibration,
         position_source=position_source,
+        force_source=force_source,
+        force_bands=force_bands,
+        force_smoothing_samples=force_cfg.get("smoothing_samples", 5),
         travel_mm=travel_mm,
         cue_speed_mm_s=cue_speed_mm_s,
     )

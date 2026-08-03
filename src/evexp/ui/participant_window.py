@@ -6,6 +6,12 @@ their numeric finger speed. All of that lives in the experimenter window on a
 separate screen - a changing number in front of the participant would compete
 with the perceptual task.
 
+The one number that *is* shown to the participant, indirectly, is applied
+force - as the fill colour and border weight of their own position marker.
+That is feedback about the participant's own present action, not a result to
+be interpreted, so it does not compete with the perceptual task the way a
+numeric readout would.
+
 There is no keyboard shortcut to close this window. Ending a session is the
 experimenter's decision, made from the console; a stray Escape keypress by the
 participant must not truncate a session mid-staircase.
@@ -24,8 +30,11 @@ from PyQt5.QtCore import QElapsedTimer, QPointF, QRectF, Qt, QTimer, pyqtSignal
 from PyQt5.QtGui import QColor, QFont, QPainter, QPen
 from PyQt5.QtWidgets import QLabel, QVBoxLayout, QWidget
 
+from evexp.hardware.force import ForceSource
 from evexp.hardware.position import PositionSource
 from evexp.hardware.screen import ScreenCalibration
+from evexp.processing.force_feedback import (ForceBands, ForceSmoother,
+                                              force_border_px, force_color)
 from evexp.ui import theme
 
 
@@ -39,6 +48,11 @@ class CueTrack(QWidget):
     both shape and hue so they stay distinguishable without relying on colour
     discrimination.
 
+    The square's own fill and border additionally carry force feedback: its
+    colour moves from blue (too light) through green (on target) to red (too
+    hard), and its border thickens with distance from target regardless of
+    colour, so the feedback still works without colour discrimination.
+
     The cue is driven by speed, not by the interval duration. It travels at
     cue_speed_mm_s and reverses at each end of the track, continuing for as
     long as the interval lasts. Deriving it from the duration instead would
@@ -47,8 +61,10 @@ class CueTrack(QWidget):
     asked for - and stimulus duration would then vary between speed
     conditions, which is a confound in its own right.
 
-    The square is fed by a PositionSource. Today that source is the mouse;
-    when the Neonode touch sensor is wired up nothing here changes.
+    Both the square and the force source are fed externally. Today position
+    comes from the mouse and force from a simulated or manually-driven
+    source; when the Neonode sensor and the Nano17 are wired up, nothing
+    here changes.
     """
 
     FRAME_INTERVAL_MS = 16    # ~60 fps
@@ -56,6 +72,9 @@ class CueTrack(QWidget):
 
     def __init__(self, calibration: ScreenCalibration,
                  position_source: Optional[PositionSource] = None,
+                 force_source: Optional[ForceSource] = None,
+                 force_bands: Optional[ForceBands] = None,
+                 force_smoothing_samples: int = 5,
                  travel_mm: float = 100.0,
                  cue_speed_mm_s: float = 50.0,
                  parent=None):
@@ -64,6 +83,9 @@ class CueTrack(QWidget):
         self.setMouseTracking(True)
         self._cal = calibration
         self._position_source = position_source
+        self._force_source = force_source
+        self._force_bands = force_bands or ForceBands(target_n=1.0, full_scale_n=0.6)
+        self._force_smoother = ForceSmoother(window_samples=force_smoothing_samples)
         self._travel_mm = travel_mm
         self._cue_speed_mm_s = cue_speed_mm_s
 
@@ -163,6 +185,7 @@ class CueTrack(QWidget):
         self._track_visible = False
         self._timer.stop()
         self._cue_mm = 0.0
+        self._force_smoother.reset()
         self.update()
 
     def _cue_position_mm(self, elapsed_s: float) -> float:
@@ -191,20 +214,45 @@ class CueTrack(QWidget):
     # --- position input ----------------------------------------------------
 
     def mouseMoveEvent(self, event) -> None:
-        """Feed pointer position into the position source, if it accepts it.
+        """Feed pointer position into the position and (if manual) force sources.
 
         Only ManualPositionSource has push(); a real sensor source produces
-        its own samples and ignores the mouse entirely.
+        its own samples and ignores the mouse entirely. The same applies to
+        force: ManualForceSource is a development stand-in, driven here by
+        the pointer's vertical position (up = more force) so the feedback
+        colours can be exercised deliberately instead of only ever showing
+        the on-target colour.
         """
-        push = getattr(self._position_source, "push", None)
-        if push is not None and self._track_visible:
-            push(self._px_to_mm(event.pos().x()))
+        if self._track_visible:
+            push_position = getattr(self._position_source, "push", None)
+            if push_position is not None:
+                push_position(self._px_to_mm(event.pos().x()))
+
+            push_force = getattr(self._force_source, "push", None)
+            if push_force is not None:
+                push_force(self._force_from_pointer_y(event.pos().y()))
         super().mouseMoveEvent(event)
+
+    def _force_from_pointer_y(self, y_px: float) -> float:
+        """Map vertical pointer position to a force for manual driving.
+
+        Top of the widget is the highest force the scale shows meaningfully
+        (target plus twice the full-scale distance, i.e. solidly past
+        saturated red); bottom is zero. Purely a development convenience -
+        it has no physical meaning once a real sensor is in use.
+        """
+        span = max(1.0, float(self.height()))
+        fraction = 1.0 - min(1.0, max(0.0, y_px / span))
+        max_force = self._force_bands.target_n + 2.0 * self._force_bands.full_scale_n
+        return fraction * max_force
 
     def leaveEvent(self, event) -> None:
         clear = getattr(self._position_source, "clear", None)
         if clear is not None:
             clear()
+        force_clear = getattr(self._force_source, "clear", None)
+        if force_clear is not None:
+            force_clear()
         super().leaveEvent(event)
 
     # --- painting ----------------------------------------------------------
@@ -241,17 +289,31 @@ class CueTrack(QWidget):
                                 theme.CURSOR_RADIUS_PX,
                                 theme.CURSOR_RADIUS_PX)
 
-        # Participant's finger position (square), on top.
+        # Participant's finger position (square), on top. Fill and border
+        # carry force feedback; position comes from the position source
+        # independently of it, so a working position source with no force
+        # source yet still draws a marker, just an uncoloured one.
         if self._position_source is not None:
             sample = self._position_source.read()
             if sample is not None:
+                raw_force = (self._force_source.read_normal_force()
+                            if self._force_source is not None else None)
+                smoothed = self._force_smoother.add(raw_force)
+
+                fill = force_color(smoothed, self._force_bands)
+                border_px = force_border_px(smoothed, self._force_bands)
+
                 mx = self._mm_to_px(sample.x_mm)
                 half = theme.MARKER_SIZE_PX / 2.0
-                painter.setPen(Qt.NoPen)
-                painter.setBrush(QColor(theme.PARTICIPANT_MARKER))
-                painter.drawRect(QRectF(mx - half, y - half,
-                                        theme.MARKER_SIZE_PX,
-                                        theme.MARKER_SIZE_PX))
+                rect = QRectF(mx - half, y - half,
+                              theme.MARKER_SIZE_PX, theme.MARKER_SIZE_PX)
+
+                if border_px > 0:
+                    painter.setPen(QPen(QColor(fill).darker(130), border_px))
+                else:
+                    painter.setPen(Qt.NoPen)
+                painter.setBrush(QColor(fill))
+                painter.drawRect(rect)
 
 
 class ParticipantWindow(QWidget):
@@ -274,6 +336,9 @@ class ParticipantWindow(QWidget):
 
     def __init__(self, calibration: ScreenCalibration,
                  position_source: Optional[PositionSource] = None,
+                 force_source: Optional[ForceSource] = None,
+                 force_bands: Optional[ForceBands] = None,
+                 force_smoothing_samples: int = 5,
                  travel_mm: float = 100.0,
                  cue_speed_mm_s: float = 50.0):
         super().__init__()
@@ -304,8 +369,9 @@ class ParticipantWindow(QWidget):
         self._hint.setFont(QFont(theme.FONT_FAMILY, theme.FONT_SIZE_BODY))
         self._hint.setStyleSheet(f"color: {theme.TEXT_SECONDARY};")
 
-        self._cue = CueTrack(calibration, position_source, travel_mm,
-                             cue_speed_mm_s, self)
+        self._cue = CueTrack(calibration, position_source, force_source,
+                             force_bands, force_smoothing_samples,
+                             travel_mm, cue_speed_mm_s, self)
 
         layout = QVBoxLayout()
         layout.setContentsMargins(60, 50, 60, 50)
