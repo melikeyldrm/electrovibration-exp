@@ -9,6 +9,30 @@ session:
   participant_id: sim_participant_01
   output_dir: data
 
+display:
+  # Physical calibration of the participant display. Everything the
+  # participant sees is laid out in millimetres and converted to pixels
+  # through these numbers, so that the cue track is the same physical length
+  # and the pacing cue the same physical speed in any window.
+  #
+  # TODO: MEASURE. Put a ruler against the ACTIVE (lit) area of the 3M
+  # touchscreen - not the bezel - and record its width and height in mm,
+  # together with the resolution Windows reports for that display. The values
+  # below are a placeholder for a generic 21.5" 1920x1080 panel and are almost
+  # certainly wrong for this setup.
+  #
+  # Do not substitute Qt's reported DPI: on Windows it usually returns the
+  # logical 96 DPI, which yields a plausible-looking but incorrect calibration.
+  screen_width_px: 1920
+  screen_height_px: 1080
+  screen_width_mm: 476.0
+  screen_height_mm: 268.0
+  # Run the participant window fullscreen. Set to true for real sessions: a
+  # resized window narrower than the physical travel distance forces the
+  # track to be shrunk to fit, which breaks the calibration. Left false
+  # during development so the experimenter console stays reachable.
+  fullscreen: false
+
 staircase:
   # 3-down/1-up (Levitt 1971), targeting ~79.4% correct.
   # "3 correct" need not be consecutive - see consecutive_required below.
@@ -46,8 +70,27 @@ timing:
   pre_interval_wait_s: 3.0
   interval_s: 4.0
   gap_s: 2.0
+  # Physical pace the cue asks for. The cue travels at this speed and reverses
+  # at each end of the track, continuing for the whole interval - so interval
+  # duration and sliding speed are set independently, and stimulus duration
+  # stays constant across speed conditions.
+  #
+  # At 50 mm/s over a 100 mm track this reproduces the protocol exactly: one
+  # two-second stroke out and one two-second stroke back per four-second
+  # interval (Vuik/Pool/Kenanoglu/Vardar 2024/2025). At other speeds the
+  # number of strokes per interval changes instead, which follows the
+  # fixed-duration convention used by AliAbbasi et al. (2024).
+  #
+  # OPEN QUESTION for Umut: at 20 and 80 mm/s, should the interval duration
+  # stay fixed (stroke count varies, and a 20 mm/s stroke does not complete),
+  # or should the travel distance scale with speed so that every condition is
+  # exactly one stroke out and back?
   cursor_speed_mm_s: 50.0
   cursor_travel_mm: 100.0
+  # Speed conditions offered in the setup dialog. Free-text entry is
+  # deliberately not allowed: the conditions are fixed by the protocol, so
+  # any other value is a typo, and a typo here is invisible until analysis.
+  speed_options_mm_s: [20.0, 50.0, 80.0]
 
 training:
   n_trials: 3

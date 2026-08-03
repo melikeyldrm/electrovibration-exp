@@ -1,45 +1,92 @@
 """Interactive 2IFC threshold session with a real participant."""
 
-import shutil
 import sys
 from datetime import datetime
 from pathlib import Path
 
 import yaml
-from PyQt5.QtWidgets import QApplication, QInputDialog
+from PyQt5.QtWidgets import QApplication
 
 from evexp.data.csv_logger import CSVTrialLogger
 from evexp.hardware.mock import MockStimulusOutput
 from evexp.hardware.position import ManualPositionSource
+from evexp.hardware.screen import ScreenCalibration
 from evexp.psychophysics.staircase import StaircaseConfig, StaircaseController
 from evexp.psychophysics.trial import Trial2IFC, TrialTiming
 from evexp.ui.experimenter_window import ExperimenterWindow
 from evexp.ui.participant_window import ParticipantWindow
 from evexp.ui.session_controller import SessionController
+from evexp.ui.setup_dialog import ask_for_setup
 
 CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "experiment.yaml"
+
+
+def write_config_snapshot(cfg: dict, path: Path) -> None:
+    """Record the configuration this session actually ran with.
+
+    Deliberately a dump of the in-memory config rather than a copy of the
+    file: choices made at runtime - the speed condition in particular - are
+    not in the file, and a snapshot that disagrees with the session it
+    documents is worse than no snapshot, because it will be believed.
+
+    The cost is that the comments in experiment.yaml are not carried over.
+    The snapshot exists for reproducibility, not for explanation, and the
+    commented file stays in version control.
+    """
+    header = (
+        "# Effective configuration for this session, including choices made\n"
+        "# in the setup dialog. Generated automatically - do not edit.\n"
+        f"# Written {datetime.now().isoformat(timespec='seconds')}\n"
+    )
+    path.write_text(header + yaml.safe_dump(cfg, sort_keys=False))
 
 
 def main():
     cfg = yaml.safe_load(CONFIG_PATH.read_text())
     session_cfg = cfg["session"]
     timing_cfg = cfg["timing"]
+    display_cfg = cfg["display"]
 
     app = QApplication(sys.argv)
 
-    participant_id, ok = QInputDialog.getText(
-        None, "Session setup", "Participant ID:"
+    # Physical calibration of the participant display. Built before anything
+    # is drawn, because the cue track geometry and the pacing speed both
+    # depend on it, and a wrong calibration silently corrupts every recorded
+    # speed rather than failing visibly.
+    calibration = ScreenCalibration.from_config(display_cfg)
+    print(f"Display calibration: {calibration.describe()}")
+    for warning in calibration.warnings():
+        print(f"WARNING: {warning}")
+
+    setup = ask_for_setup(
+        speed_options=timing_cfg["speed_options_mm_s"],
+        default_speed_mm_s=timing_cfg["cursor_speed_mm_s"],
+        experiment_id=session_cfg["experiment_id"],
     )
-    if not ok or not participant_id.strip():
-        print("No participant ID entered, exiting.")
+    if setup is None:
+        print("Setup cancelled, exiting.")
         sys.exit(0)
-    participant_id = participant_id.strip()
+
+    participant_id = setup.participant_id
+    cue_speed_mm_s = setup.target_speed_mm_s
+    # Fold the runtime choice back into the config so that everything
+    # downstream - trial timing, the console readout, the snapshot - reads
+    # the same single value.
+    timing_cfg["cursor_speed_mm_s"] = cue_speed_mm_s
+    session_cfg["participant_id"] = participant_id
+    print(f"Participant {participant_id}, sliding speed {cue_speed_mm_s:g} mm/s")
 
     staircase = StaircaseController(StaircaseConfig(**cfg["staircase"]))
     trial = Trial2IFC(
         stimulus=MockStimulusOutput(verbose=False),
         staircase=staircase,
-        timing=TrialTiming(**timing_cfg),
+        timing=TrialTiming(
+            pre_interval_wait_s=timing_cfg["pre_interval_wait_s"],
+            interval_s=timing_cfg["interval_s"],
+            gap_s=timing_cfg["gap_s"],
+            cursor_speed_mm_s=timing_cfg["cursor_speed_mm_s"],
+            cursor_travel_mm=timing_cfg["cursor_travel_mm"],
+        ),
         training_voltage=cfg.get("training", {}).get("voltage", 2.0),
     )
 
@@ -52,7 +99,7 @@ def main():
     print(f"Logging trials to {output_path}")
 
     snapshot_path = output_path.with_suffix(".yaml")
-    shutil.copy(CONFIG_PATH, snapshot_path)
+    write_config_snapshot(cfg, snapshot_path)
     print(f"Config snapshot saved to {snapshot_path}")
 
     reveal = cfg.get("debug", {}).get("reveal_stimulus", False)
@@ -69,13 +116,15 @@ def main():
     print("Position source: mouse (move the pointer along the cue track)")
 
     participant = ParticipantWindow(
+        calibration=calibration,
         position_source=position_source,
         travel_mm=travel_mm,
+        cue_speed_mm_s=cue_speed_mm_s,
     )
     experimenter = ExperimenterWindow(
         session_cfg["experiment_id"],
         participant_id,
-        target_speed_mm_s=timing_cfg["cursor_speed_mm_s"],
+        target_speed_mm_s=cue_speed_mm_s,
     )
 
     controller = SessionController(
@@ -86,7 +135,10 @@ def main():
     )
 
     experimenter.show()
-    participant.show()
+    if display_cfg.get("fullscreen", False):
+        participant.showFullScreen()
+    else:
+        participant.show()
     participant.activateWindow()
     participant.setFocus()
 
