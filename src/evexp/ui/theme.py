@@ -36,8 +36,12 @@ FONT_SIZE_BODY = 22           # hints and instructions
 
 # --- Geometry --------------------------------------------------------------
 
-CURSOR_RADIUS_PX = 26
-MARKER_SIZE_PX = 40           # square side; roughly matches cursor diameter
+# The participant's square sits on top of the pacing circle and must stay
+# smaller than it, so that "on pace" reads as the square nested inside the
+# circle rather than the two merely overlapping. Both are larger than a
+# fingertip is wide, so neither disappears under the hand.
+CURSOR_RADIUS_PX = 36         # circle: 72 px across
+MARKER_SIZE_PX = 46           # square side; comfortably inside the circle
 TRACK_HEIGHT_PX = 8
 START_MARKER_HEIGHT_PX = 34   # vertical notch marking the start position
 

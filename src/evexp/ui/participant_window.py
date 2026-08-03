@@ -9,6 +9,11 @@ with the perceptual task.
 There is no keyboard shortcut to close this window. Ending a session is the
 experimenter's decision, made from the console; a stray Escape keypress by the
 participant must not truncate a session mid-staircase.
+
+All geometry here is specified in millimetres and converted to pixels through
+a ScreenCalibration at draw time. Sliding speed is an experimental variable,
+so the cue track has to be the same physical length - and the pacing cue the
+same physical speed - regardless of the window it happens to be drawn in.
 """
 
 import math
@@ -20,34 +25,49 @@ from PyQt5.QtGui import QColor, QFont, QPainter, QPen
 from PyQt5.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 from evexp.hardware.position import PositionSource
+from evexp.hardware.screen import ScreenCalibration
 from evexp.ui import theme
 
 
 class CueTrack(QWidget):
     """Pacing cue plus the participant's own tracked position.
 
-    Two markers share one track: a circle sweeping left to right at a fixed
-    rate (the pace the participant is asked to match), and a square showing
-    where the participant's finger actually is. The gap between them *is* the
-    speed feedback - no numeric readout is needed, and the two markers differ
-    in both shape and hue so they stay distinguishable without relying on
-    colour discrimination.
+    Two markers share one track: a circle moving at a fixed physical speed
+    (the pace the participant is asked to match), and a square showing where
+    the participant's finger actually is. The gap between them *is* the speed
+    feedback - no numeric readout is needed, and the two markers differ in
+    both shape and hue so they stay distinguishable without relying on colour
+    discrimination.
+
+    The cue is driven by speed, not by the interval duration. It travels at
+    cue_speed_mm_s and reverses at each end of the track, continuing for as
+    long as the interval lasts. Deriving it from the duration instead would
+    tie the pace to the track length, so changing either the interval or the
+    travel distance would silently change the speed the participant is being
+    asked for - and stimulus duration would then vary between speed
+    conditions, which is a confound in its own right.
 
     The square is fed by a PositionSource. Today that source is the mouse;
     when the Neonode touch sensor is wired up nothing here changes.
     """
 
-    TRACK_MARGIN_PX = 100
-    FRAME_INTERVAL_MS = 16   # ~60 fps
+    FRAME_INTERVAL_MS = 16    # ~60 fps
+    MIN_MARGIN_PX = 40        # breathing room at each end of the track
 
-    def __init__(self, position_source: Optional[PositionSource] = None,
-                 travel_mm: float = 100.0, parent=None):
+    def __init__(self, calibration: ScreenCalibration,
+                 position_source: Optional[PositionSource] = None,
+                 travel_mm: float = 100.0,
+                 cue_speed_mm_s: float = 50.0,
+                 parent=None):
         super().__init__(parent)
         self.setMinimumHeight(200)
         self.setMouseTracking(True)
+        self._cal = calibration
         self._position_source = position_source
         self._travel_mm = travel_mm
-        self._progress = 0.0
+        self._cue_speed_mm_s = cue_speed_mm_s
+
+        self._cue_mm = 0.0
         self._running = False
         self._track_visible = False
         self._duration_ms = 2000
@@ -55,26 +75,63 @@ class CueTrack(QWidget):
         self._timer = QTimer(self)
         self._timer.setInterval(self.FRAME_INTERVAL_MS)
         self._timer.timeout.connect(self._on_frame)
+        self._warned_too_narrow = False
 
     # --- track geometry ----------------------------------------------------
 
+    def set_cue_speed(self, speed_mm_s: float) -> None:
+        """Set the physical pace the cue asks for, in mm/s."""
+        self._cue_speed_mm_s = speed_mm_s
+
+    def _track_length_px(self) -> float:
+        """Length of the track on screen, honouring the calibration.
+
+        Falls back to the available width if the window is too narrow to hold
+        the full physical travel. That fallback breaks the calibration, so it
+        warns once rather than failing silently: a session run in a too-small
+        window would otherwise record speeds that are quietly wrong.
+        """
+        wanted = self._cal.mm_to_px_x(self._travel_mm)
+        available = self.width() - 2 * self.MIN_MARGIN_PX
+        if available <= 0:
+            return 1.0
+        if wanted > available:
+            if not self._warned_too_narrow:
+                self._warned_too_narrow = True
+                print(
+                    f"WARNING: window is too narrow for a {self._travel_mm:.0f} mm "
+                    f"track ({wanted:.0f} px needed, {available:.0f} px available). "
+                    "The track has been shrunk to fit, so displayed distances and "
+                    "speeds are NOT physically calibrated. Run fullscreen on the "
+                    "calibrated display."
+                )
+            return float(available)
+        return wanted
+
+    def _effective_mm_per_px(self) -> float:
+        """mm per pixel actually in force along the track.
+
+        Equal to the calibration whenever the track fits, which is the only
+        case that produces valid data; using the drawn length keeps the
+        display self-consistent in the degraded case too.
+        """
+        return self._travel_mm / self._track_length_px()
+
     def _track_bounds(self) -> tuple[float, float, float]:
-        x0 = float(self.TRACK_MARGIN_PX)
-        x1 = float(self.width() - self.TRACK_MARGIN_PX)
+        length = self._track_length_px()
+        x0 = (self.width() - length) / 2.0
         y = self.height() / 2.0
-        return x0, x1, y
+        return x0, x0 + length, y
 
     def _mm_to_px(self, x_mm: float) -> float:
-        x0, x1, _ = self._track_bounds()
-        fraction = x_mm / self._travel_mm if self._travel_mm else 0.0
-        return x0 + min(1.0, max(0.0, fraction)) * (x1 - x0)
+        x0, _, _ = self._track_bounds()
+        clamped = min(self._travel_mm, max(0.0, x_mm))
+        return x0 + clamped / self._effective_mm_per_px()
 
     def _px_to_mm(self, x_px: float) -> float:
-        x0, x1, _ = self._track_bounds()
-        span = x1 - x0
-        if span <= 0:
-            return 0.0
-        return (x_px - x0) / span * self._travel_mm
+        x0, _, _ = self._track_bounds()
+        x_mm = (x_px - x0) * self._effective_mm_per_px()
+        return min(self._travel_mm, max(0.0, x_mm))
 
     # --- phase control -----------------------------------------------------
 
@@ -87,14 +144,14 @@ class CueTrack(QWidget):
         """
         self._running = False
         self._timer.stop()
-        self._progress = 0.0
+        self._cue_mm = 0.0
         self._track_visible = True
         self._timer.start()   # keep repainting so the marker follows the finger
         self.update()
 
     def start(self, duration_s: float) -> None:
         self._duration_ms = max(1, int(duration_s * 1000))
-        self._progress = 0.0
+        self._cue_mm = 0.0
         self._running = True
         self._track_visible = True
         self._elapsed.restart()
@@ -105,17 +162,30 @@ class CueTrack(QWidget):
         self._running = False
         self._track_visible = False
         self._timer.stop()
-        self._progress = 0.0
+        self._cue_mm = 0.0
         self.update()
+
+    def _cue_position_mm(self, elapsed_s: float) -> float:
+        """Cue position for a constant-speed out-and-back sweep.
+
+        A triangle wave over distance: the cue covers travel_mm, turns
+        around, and comes back, at the same speed throughout.
+        """
+        if self._cue_speed_mm_s <= 0 or self._travel_mm <= 0:
+            return 0.0
+        cycle_mm = 2.0 * self._travel_mm
+        distance = (elapsed_s * self._cue_speed_mm_s) % cycle_mm
+        if distance <= self._travel_mm:
+            return distance
+        return cycle_mm - distance
 
     def _on_frame(self) -> None:
         if self._running:
-            fraction = self._elapsed.elapsed() / self._duration_ms
-            if fraction >= 1.0:
-                self._progress = 1.0
+            elapsed_ms = self._elapsed.elapsed()
+            if elapsed_ms >= self._duration_ms:
                 self._running = False
             else:
-                self._progress = fraction
+                self._cue_mm = self._cue_position_mm(elapsed_ms / 1000.0)
         self.update()
 
     # --- position input ----------------------------------------------------
@@ -160,7 +230,18 @@ class CueTrack(QWidget):
         painter.drawLine(int(x0), int(y - half_notch),
                          int(x0), int(y + half_notch))
 
-        # Participant's finger position (square)
+        # Pacing cue (circle) - only while an interval is running. Drawn
+        # before the participant's marker so that the marker stays visible
+        # when the two overlap, which is exactly when the participant is on
+        # pace and most needs to be able to tell.
+        if self._running:
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QColor(theme.CURSOR))
+            painter.drawEllipse(QPointF(self._mm_to_px(self._cue_mm), y),
+                                theme.CURSOR_RADIUS_PX,
+                                theme.CURSOR_RADIUS_PX)
+
+        # Participant's finger position (square), on top.
         if self._position_source is not None:
             sample = self._position_source.read()
             if sample is not None:
@@ -171,15 +252,6 @@ class CueTrack(QWidget):
                 painter.drawRect(QRectF(mx - half, y - half,
                                         theme.MARKER_SIZE_PX,
                                         theme.MARKER_SIZE_PX))
-
-        # Pacing cue (circle) - only while an interval is running
-        if self._running:
-            cx = x0 + self._progress * (x1 - x0)
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(theme.CURSOR))
-            painter.drawEllipse(QPointF(cx, y),
-                                theme.CURSOR_RADIUS_PX,
-                                theme.CURSOR_RADIUS_PX)
 
 
 class ParticipantWindow(QWidget):
@@ -200,12 +272,15 @@ class ParticipantWindow(QWidget):
     startRequested = pyqtSignal()
     responseGiven = pyqtSignal(int)
 
-    def __init__(self, position_source: Optional[PositionSource] = None,
-                 travel_mm: float = 100.0):
+    def __init__(self, calibration: ScreenCalibration,
+                 position_source: Optional[PositionSource] = None,
+                 travel_mm: float = 100.0,
+                 cue_speed_mm_s: float = 50.0):
         super().__init__()
         self.setWindowTitle("Participant")
         self.setStyleSheet(f"background-color: {theme.BACKGROUND};")
         self.resize(1100, 700)
+        self._calibration = calibration
 
         self._message = QLabel("", self)
         self._message.setAlignment(Qt.AlignCenter)
@@ -229,7 +304,8 @@ class ParticipantWindow(QWidget):
         self._hint.setFont(QFont(theme.FONT_FAMILY, theme.FONT_SIZE_BODY))
         self._hint.setStyleSheet(f"color: {theme.TEXT_SECONDARY};")
 
-        self._cue = CueTrack(position_source, travel_mm, self)
+        self._cue = CueTrack(calibration, position_source, travel_mm,
+                             cue_speed_mm_s, self)
 
         layout = QVBoxLayout()
         layout.setContentsMargins(60, 50, 60, 50)
