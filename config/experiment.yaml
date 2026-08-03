@@ -103,6 +103,10 @@ force:
   # UI poll (5 samples = 250 ms). Without it, noise crossing a colour
   # boundary would flicker the marker several times a second.
   smoothing_samples: 5
+  # Half-width of the "on target" band used for the force_in_band_fraction
+  # column, separate from full_scale_n (which is where the display colour
+  # saturates). Left unset it defaults to 30% of full_scale_n.
+  in_band_half_width_n:
   # No force sensor yet. "mouse_y" lets the experimenter drive the applied
   # force with the mouse's vertical position during development - drag up
   # for more force, down for less - so the feedback colours can be exercised

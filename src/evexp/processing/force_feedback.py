@@ -28,15 +28,37 @@ class ForceBands:
     force, not independent low/high thresholds, so drifting 0.3 N under and
     0.3 N over should look like equal and opposite errors, not different
     amounts of wrong.
+
+    in_band_half_width_n is separate from full_scale_n: full_scale_n is
+    where the *colour* saturates (blue or red), whereas in_band_half_width_n
+    is the narrower window that counts as "on target" for the per-trial
+    force_in_band_fraction statistic. Left unset, it defaults to 30% of
+    full_scale_n - close enough to green to be a meaningful "on target"
+    claim without being so strict that ordinary hand tremor fails it.
     """
 
     target_n: float
     full_scale_n: float   # distance from target at which the colour is saturated
+    in_band_half_width_n: Optional[float] = None
 
     def __post_init__(self) -> None:
         if self.full_scale_n <= 0:
             raise ValueError(
                 f"full_scale_n must be positive, got {self.full_scale_n!r}")
+        if self.in_band_half_width_n is not None and self.in_band_half_width_n <= 0:
+            raise ValueError(
+                f"in_band_half_width_n must be positive, got "
+                f"{self.in_band_half_width_n!r}"
+            )
+
+    @property
+    def effective_in_band_half_width_n(self) -> float:
+        if self.in_band_half_width_n is not None:
+            return self.in_band_half_width_n
+        return 0.3 * self.full_scale_n
+
+    def is_in_band(self, force_n: float) -> bool:
+        return abs(self.signed_error(force_n)) <= self.effective_in_band_half_width_n
 
     def signed_error(self, force_n: float) -> float:
         """Positive when pressing too hard, negative when too light."""
@@ -120,3 +142,73 @@ class ForceSmoother:
 
     def reset(self) -> None:
         self._values.clear()
+
+
+@dataclass(frozen=True)
+class ForceTrialStats:
+    """Force summary for one trial, ready to drop straight into TrialResult.
+
+    mean_n and std_n are None when no contact was ever detected during the
+    collection window - a trial with no force data should not silently read
+    as "zero force", which is a specific and different claim.
+    """
+
+    mean_n: Optional[float]
+    std_n: Optional[float]
+    in_band_fraction: float
+    n_samples: int
+    n_contact_samples: int
+
+
+class ForceTrialAccumulator:
+    """Collects force readings over one trial and summarises them at the end.
+
+    Polled at the same 20 Hz cadence SpeedEstimator uses for position, and
+    for the same reason: the raw signal is read far more often than any
+    number needs to be displayed or logged, so the accumulator's job is to
+    turn "many readings during this trial" into the handful of numbers a CSV
+    row can hold.
+
+    Readings are collected raw, not the smoothed values shown on screen -
+    the on-screen colour is deliberately lagged to avoid flicker, but the
+    logged mean and spread should describe what the sensor actually saw.
+    """
+
+    def __init__(self, bands: ForceBands):
+        self._bands = bands
+        self._values: list = []
+        self._n_samples = 0
+
+    def reset(self) -> None:
+        self._values.clear()
+        self._n_samples = 0
+
+    def add(self, force_n: Optional[float]) -> None:
+        """Record one reading. None means no contact at that instant."""
+        self._n_samples += 1
+        if force_n is not None:
+            self._values.append(force_n)
+
+    def stats(self) -> ForceTrialStats:
+        n = len(self._values)
+        if n == 0:
+            return ForceTrialStats(
+                mean_n=None, std_n=None, in_band_fraction=0.0,
+                n_samples=self._n_samples, n_contact_samples=0,
+            )
+
+        mean_n = sum(self._values) / n
+        if n >= 2:
+            variance = sum((v - mean_n) ** 2 for v in self._values) / (n - 1)
+            std_n = variance ** 0.5
+        else:
+            std_n = 0.0
+
+        in_band = sum(1 for v in self._values if self._bands.is_in_band(v))
+        return ForceTrialStats(
+            mean_n=mean_n,
+            std_n=std_n,
+            in_band_fraction=in_band / n,
+            n_samples=self._n_samples,
+            n_contact_samples=n,
+        )

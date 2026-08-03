@@ -53,6 +53,16 @@ class TrialResult:
     response_time_s: float
     training: bool = False    # True for training trials; staircase not updated
 
+    # Filled in by SessionController after submit_response() returns, not by
+    # Trial2IFC itself - the trial state machine has no hardware dependency,
+    # so it neither knows about nor computes these. None means "no force
+    # source was configured for this session", distinct from a force reading
+    # of zero.
+    mean_normal_force_n: Optional[float] = None
+    std_normal_force_n: Optional[float] = None
+    force_in_band_fraction: Optional[float] = None
+    cursor_speed_mm_s: Optional[float] = None
+
 
 class Trial2IFC:
     """Sequences 2IFC trials as a non-blocking state machine.

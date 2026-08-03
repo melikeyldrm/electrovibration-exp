@@ -127,6 +127,7 @@ def main():
     force_bands = ForceBands(
         target_n=force_cfg["target_n"],
         full_scale_n=force_cfg["full_scale_n"],
+        in_band_half_width_n=force_cfg.get("in_band_half_width_n"),
     )
     force_source_kind = force_cfg.get("source", "simulated")
     if force_source_kind == "mouse_y":
@@ -184,6 +185,9 @@ def main():
         reveal_stimulus=reveal,
         n_training=cfg.get("training", {}).get("n_trials", 0),
         position_source=position_source,
+        force_source=force_source,
+        force_bands=force_bands,
+        cursor_speed_mm_s=cue_speed_mm_s,
     )
 
     experimenter.show()

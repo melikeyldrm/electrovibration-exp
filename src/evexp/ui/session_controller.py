@@ -3,10 +3,12 @@
 Every phase transition is driven by a one-shot QTimer rather than by waiting,
 so the interface stays responsive throughout. This is also why Trial2IFC itself
 contains no Qt code: swapping this controller for the headless SimulatedRunner
-requires no change to the trial logic.
+requires no change to the trial logic. The same separation holds for force: the
+force source and the per-trial statistics live here, not in Trial2IFC, so the
+trial state machine stays hardware-free.
 
-A separate repeating timer polls the position source and pushes the derived
-finger speed to the experimenter console. Polling is used rather than a
+A separate repeating timer polls the position and force sources and pushes the
+derived finger speed to the experimenter console. Polling is used rather than a
 callback so that the display refreshes at a fixed, predictable rate regardless
 of how fast the underlying source produces samples - the mouse fires events
 only when it moves, whereas a real sensor streams at ~100 Hz.
@@ -18,13 +20,22 @@ from typing import Optional
 from PyQt5.QtCore import QObject, QTimer
 
 from evexp.data.csv_logger import CSVTrialLogger
+from evexp.hardware.force import ForceSource
 from evexp.hardware.position import PositionSource
+from evexp.processing.force_feedback import ForceBands, ForceTrialAccumulator
 from evexp.processing.speed import SpeedEstimator
 from evexp.psychophysics.trial import Trial2IFC, TrialState
 from evexp.ui.experimenter_window import ExperimenterWindow
 from evexp.ui.participant_window import ParticipantWindow
 
-SPEED_POLL_INTERVAL_MS = 50   # 20 Hz: fast enough to be live, slow enough to read
+SENSOR_POLL_INTERVAL_MS = 50   # 20 Hz: fast enough to be live, slow enough to read
+
+# States during which the participant is actually stroking the screen, as
+# opposed to waiting or resting between intervals. Force is only meaningful
+# to summarise while this is happening - averaging in the gap, where the
+# finger is lifted, would pull the mean toward "no contact" for reasons that
+# have nothing to do with how well the participant pressed.
+_STROKING_STATES = (TrialState.INTERVAL_1, TrialState.INTERVAL_2)
 
 
 class SessionController(QObject):
@@ -37,6 +48,9 @@ class SessionController(QObject):
         reveal_stimulus: bool = False,
         n_training: int = 0,
         position_source: Optional[PositionSource] = None,
+        force_source: Optional[ForceSource] = None,
+        force_bands: Optional[ForceBands] = None,
+        cursor_speed_mm_s: Optional[float] = None,
     ):
         super().__init__()
         self.trial = trial
@@ -47,6 +61,7 @@ class SessionController(QObject):
         self._n_training_total = n_training
         self._n_training = 0
         self._training_done = (n_training == 0)
+        self._cursor_speed_mm_s = cursor_speed_mm_s
 
         # Wire participant inputs to the two entry points of the trial loop.
         # SPACE -> _begin_trial, 1/2 keypress -> _on_response.
@@ -57,11 +72,22 @@ class SessionController(QObject):
         # Live finger-speed readout on the experimenter console.
         self._position_source = position_source
         self._speed_estimator = SpeedEstimator()
-        self._speed_timer = QTimer(self)
-        self._speed_timer.setInterval(SPEED_POLL_INTERVAL_MS)
-        self._speed_timer.timeout.connect(self._poll_speed)
-        if position_source is not None:
-            self._speed_timer.start()
+
+        # Per-trial force summary. Only built if a force source was actually
+        # supplied - a session run without one (or without the sensor wired
+        # in yet) logs None for these columns rather than fabricating zeros.
+        self._force_source = force_source
+        self._force_accumulator = (
+            ForceTrialAccumulator(force_bands)
+            if force_source is not None and force_bands is not None else None
+        )
+        self._collecting_force = False
+
+        self._sensor_timer = QTimer(self)
+        self._sensor_timer.setInterval(SENSOR_POLL_INTERVAL_MS)
+        self._sensor_timer.timeout.connect(self._poll_sensors)
+        if position_source is not None or force_source is not None:
+            self._sensor_timer.start()
 
         self._refresh_status()
 
@@ -69,6 +95,9 @@ class SessionController(QObject):
         training = not self._training_done
         if not training:
             self.experimenter.clear_message()
+        if self._force_accumulator is not None:
+            self._force_accumulator.reset()
+        self._collecting_force = False
         duration_s = self.trial.start_trial(training=training)
         label = "Training" if training else f"trial {self.trial.trial_index }"
         self._log_console(f"\n{label}  {self.trial.applied_voltage:6.3f} V")
@@ -85,6 +114,7 @@ class SessionController(QObject):
         # Returns None at AWAITING_RESPONSE because that phase has no fixed duration.
         duration_s = self.trial.advance()
         state = self.trial.state
+        self._collecting_force = state in _STROKING_STATES
 
         if state is TrialState.INTERVAL_1:
             self.participant.show_interval(1, duration_s)
@@ -107,16 +137,34 @@ class SessionController(QObject):
             self._arm(duration_s)
 
     def _on_response(self, response_interval: int) -> None:
+        self._collecting_force = False
         result = self.trial.submit_response(response_interval)
+
+        # Filled in here, not by Trial2IFC: these come from hardware the
+        # trial state machine has no knowledge of. TrialResult is a plain,
+        # mutable dataclass for exactly this reason - the CSV logger reads
+        # its field list dynamically, so adding data here needs no change to
+        # the logger or to Trial2IFC.
+        if self._force_accumulator is not None:
+            stats = self._force_accumulator.stats()
+            result.mean_normal_force_n = stats.mean_n
+            result.std_normal_force_n = stats.std_n
+            result.force_in_band_fraction = stats.in_band_fraction
+        result.cursor_speed_mm_s = self._cursor_speed_mm_s
+
         # Log every trial immediately so a crash mid-session still yields
         # partial data. Training rows are included with training=True flag.
         self.logger.log(result)
 
         verdict = "correct" if result.correct else "WRONG"
         reversal = "  [reversal]" if result.reversal else ""
+        force_note = ""
+        if result.mean_normal_force_n is not None:
+            force_note = (f"   force {result.mean_normal_force_n:.2f} N "
+                          f"({result.force_in_band_fraction * 100:.0f}% in band)")
         self._log_console(
             f"  answered {response_interval} -> {verdict}{reversal}   "
-            f"next: {self.trial.staircase.value:.3f} V"
+            f"next: {self.trial.staircase.value:.3f} V{force_note}"
         )
 
         if result.training:
@@ -133,11 +181,11 @@ class SessionController(QObject):
         self.experimenter.add_result(result)
 
         if self.trial.staircase.aborted:
-            self._speed_timer.stop()
+            self._sensor_timer.stop()
             self.participant.show_aborted()
             self.experimenter.announce_abort()
         elif self.trial.finished:
-            self._speed_timer.stop()
+            self._sensor_timer.stop()
             self._save_convergence_plot()
             self.participant.show_finished()
             self.experimenter.announce_completion(self.trial.staircase)
@@ -145,14 +193,24 @@ class SessionController(QObject):
             self.participant.show_ready()
 
         self._refresh_status()
-        
-    def _poll_speed(self) -> None:
-        """Sample the position source and update the experimenter's readout."""
-        if self._position_source is None:
-            return
-        self._speed_estimator.add(self._position_source.read())
-        speed = self._speed_estimator.speed_mm_s(now=time.perf_counter())
-        self.experimenter.update_speed(speed)
+
+    def _poll_sensors(self) -> None:
+        """Sample position and force at a fixed rate.
+
+        Position feeds the live speed readout on the experimenter console.
+        Force feeds both that same console (not yet wired to show it) and,
+        while a stroke is actually in progress, the per-trial accumulator
+        that ends up in the CSV.
+        """
+        if self._position_source is not None:
+            self._speed_estimator.add(self._position_source.read())
+            speed = self._speed_estimator.speed_mm_s(now=time.perf_counter())
+            self.experimenter.update_speed(speed)
+
+        if self._force_source is not None:
+            force = self._force_source.read_normal_force()
+            if self._force_accumulator is not None and self._collecting_force:
+                self._force_accumulator.add(force)
 
     def _announce_interval(self, number: int) -> None:
         # Only prints when reveal_stimulus is True (debug/development mode).
