@@ -8,8 +8,9 @@ import yaml
 from PyQt5.QtWidgets import QApplication
 
 from evexp.data.csv_logger import CSVTrialLogger
+from evexp.data.raw_hdf5_writer import RawSessionWriter
 from evexp.hardware.acquisition import SensorAcquisition
-from evexp.hardware.force import ManualForceSource, SimulatedForceSource
+from evexp.hardware.force import ForceCalibration, ManualForceSource, SimulatedForceSource
 from evexp.hardware.mock import MockDAQDevice, MockStimulusOutput
 from evexp.processing.force_feedback import ForceBands
 from evexp.hardware.position import ManualPositionSource
@@ -85,13 +86,14 @@ def main():
         staircase=staircase,
         timing=TrialTiming(
             pre_interval_wait_s=timing_cfg["pre_interval_wait_s"],
-            interval_s=timing_cfg["interval_s"],
             gap_s=timing_cfg["gap_s"],
             cursor_speed_mm_s=timing_cfg["cursor_speed_mm_s"],
             cursor_travel_mm=timing_cfg["cursor_travel_mm"],
         ),
         training_voltage=cfg.get("training", {}).get("voltage", 2.0),
     )
+    print(f"Interval duration: {trial.timing.interval_s:.3f} s "
+          f"({timing_cfg['cursor_travel_mm']:g} mm / {cue_speed_mm_s:g} mm/s, one-way)")
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_path = Path(session_cfg["output_dir"]) / (
@@ -100,6 +102,16 @@ def main():
 
     logger = CSVTrialLogger(str(output_path))
     print(f"Logging trials to {output_path}")
+
+    raw_path = output_path.with_name(output_path.stem + "_raw").with_suffix(".h5")
+    raw_writer = RawSessionWriter(raw_path)
+    print(f"Raw per-trial signals (fx/fy/fz, voltage, speed) -> {raw_path}")
+
+    # No .cal file yet (see hardware/force.py), so forces are raw volts
+    # wearing a newton label until Umut's Nano17 calibration arrives - the
+    # placeholder still exercises the whole raw-recording path end to end.
+    force_calibration = ForceCalibration.placeholder()
+    print(f"Force calibration: {force_calibration.describe()}")
 
     snapshot_path = output_path.with_suffix(".yaml")
     write_config_snapshot(cfg, snapshot_path)
@@ -188,6 +200,9 @@ def main():
         force_source=force_source,
         force_bands=force_bands,
         cursor_speed_mm_s=cue_speed_mm_s,
+        acquisition=acquisition,
+        raw_writer=raw_writer,
+        force_calibration=force_calibration,
     )
 
     experimenter.show()

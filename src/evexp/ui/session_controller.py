@@ -12,6 +12,13 @@ derived finger speed to the experimenter console. Polling is used rather than a
 callback so that the display refreshes at a fixed, predictable rate regardless
 of how fast the underlying source produces samples - the mouse fires events
 only when it moves, whereas a real sensor streams at ~100 Hz.
+
+Raw per-trial recording (RawSessionWriter) is optional and wired in here
+rather than in Trial2IFC for the same reason force is: it needs the
+acquisition ring buffer and a force calibration, neither of which the trial
+state machine has any business knowing about. It is cut and written as soon
+as a trial's response comes in, not deferred, because SensorAcquisition's
+ring buffer holds only ~30 s - a trial cut out late is gone for good.
 """
 
 import time
@@ -20,7 +27,9 @@ from typing import Optional
 from PyQt5.QtCore import QObject, QTimer
 
 from evexp.data.csv_logger import CSVTrialLogger
-from evexp.hardware.force import ForceSource
+from evexp.data.raw_hdf5_writer import RawSessionWriter
+from evexp.hardware.acquisition import SensorAcquisition
+from evexp.hardware.force import ForceCalibration, ForceSource
 from evexp.hardware.position import PositionSource
 from evexp.processing.force_feedback import ForceBands, ForceTrialAccumulator
 from evexp.processing.speed import SpeedEstimator
@@ -51,6 +60,9 @@ class SessionController(QObject):
         force_source: Optional[ForceSource] = None,
         force_bands: Optional[ForceBands] = None,
         cursor_speed_mm_s: Optional[float] = None,
+        acquisition: Optional[SensorAcquisition] = None,
+        raw_writer: Optional[RawSessionWriter] = None,
+        force_calibration: Optional[ForceCalibration] = None,
     ):
         super().__init__()
         self.trial = trial
@@ -83,6 +95,27 @@ class SessionController(QObject):
         )
         self._collecting_force = False
 
+        # Raw per-trial signal recording. All three are required together;
+        # a session missing any one of them (acquisition not started, no
+        # writer configured, or no calibration - even a placeholder one)
+        # simply does not record raw signals, rather than half-recording.
+        self._acquisition = acquisition
+        self._raw_writer = raw_writer
+        self._force_calibration = force_calibration
+        self._raw_recording_enabled = (
+            acquisition is not None and raw_writer is not None
+            and force_calibration is not None
+        )
+        self._trial_start_perf = 0.0
+        # Both intervals' boundaries are tracked, not just one: which one
+        # carries the stimulus is randomised per trial (Trial2IFC picks it
+        # in start_trial()), so both have to be available when the trial
+        # ends and _write_raw_trial() can finally look up which was which.
+        self._interval1_start_perf = 0.0
+        self._interval1_end_perf = 0.0
+        self._interval2_start_perf = 0.0
+        self._interval2_end_perf = 0.0
+
         self._sensor_timer = QTimer(self)
         self._sensor_timer.setInterval(SENSOR_POLL_INTERVAL_MS)
         self._sensor_timer.timeout.connect(self._poll_sensors)
@@ -98,6 +131,12 @@ class SessionController(QObject):
         if self._force_accumulator is not None:
             self._force_accumulator.reset()
         self._collecting_force = False
+        # Marks the start of the raw-signal window for this trial. Recorded
+        # here (not lazily on first use) so it covers the whole trial,
+        # NOT the raw-recording window boundary any more - see _advance()
+        # for where that is actually marked. Kept for anything that still
+        # wants "when did this trial begin" in the wider sense.
+        self._trial_start_perf = time.perf_counter()
         duration_s = self.trial.start_trial(training=training)
         label = "Training" if training else f"trial {self.trial.trial_index }"
         self._log_console(f"\n{label}  {self.trial.applied_voltage:6.3f} V")
@@ -119,8 +158,13 @@ class SessionController(QObject):
         if state is TrialState.INTERVAL_1:
             self.participant.show_interval(1, duration_s)
             self._announce_interval(1)
+            self._interval1_start_perf = time.perf_counter()
         elif state is TrialState.GAP:
             self.participant.show_gap()
+            # Reached right as interval_1 ends (interval_1 is always the one
+            # right before the gap - interval_2 is followed by
+            # AWAITING_RESPONSE instead, never by GAP).
+            self._interval1_end_perf = time.perf_counter()
         elif state is TrialState.PRE_INTERVAL_WAIT:
             # Reached only on the way to interval 2; the wait before interval 1
             # is entered by _begin_trial above.
@@ -128,9 +172,11 @@ class SessionController(QObject):
         elif state is TrialState.INTERVAL_2:
             self.participant.show_interval(2, duration_s)
             self._announce_interval(2)
+            self._interval2_start_perf = time.perf_counter()
         elif state is TrialState.AWAITING_RESPONSE:
             self.participant.show_response_prompt()
             self._log_console("  -> press 1 or 2")
+            self._interval2_end_perf = time.perf_counter()
 
         self._refresh_status()
         if duration_s is not None:
@@ -139,6 +185,14 @@ class SessionController(QObject):
     def _on_response(self, response_interval: int) -> None:
         self._collecting_force = False
         result = self.trial.submit_response(response_interval)
+
+        # Cut and write the raw signal window first, before anything else
+        # in this method - the ring buffer holds only ~30 s, so this is the
+        # one step in _on_response where delay actually costs data.
+        # Training trials are skipped: they have no trial_index in the
+        # staircase's numbering and are not the data being collected.
+        if not result.training and self._raw_recording_enabled:
+            self._write_raw_trial(result)
 
         # Filled in here, not by Trial2IFC: these come from hardware the
         # trial state machine has no knowledge of. TrialResult is a plain,
@@ -211,6 +265,59 @@ class SessionController(QObject):
             force = self._force_source.read_normal_force()
             if self._force_accumulator is not None and self._collecting_force:
                 self._force_accumulator.add(force)
+
+    def _write_raw_trial(self, result) -> None:
+        """Cut only the stimulus-carrying interval from the ring buffer.
+
+        Which interval that is (1 or 2) is randomised per trial by
+        Trial2IFC, hence the lookup here rather than a fixed choice.
+
+        Best-effort: a failure here must not stop the trial loop or lose the
+        CSV row that follows, so errors are logged (when reveal_stimulus is
+        on) and swallowed rather than raised. An empty window - the ring
+        buffer already overwrote it, or acquisition was never running - is
+        skipped the same way, since RawSessionWriter has nothing useful to
+        do with zero samples.
+        """
+        try:
+            if result.stimulus_interval == 1:
+                t_start, t_end = self._interval1_start_perf, self._interval1_end_perf
+            else:
+                t_start, t_end = self._interval2_start_perf, self._interval2_end_perf
+
+            block = self._acquisition.window(t_start, t_end)
+            if block.shape[1] == 0:
+                self._log_console(
+                    "  [raw] skipped: empty window (ring buffer overrun or "
+                    "acquisition not running)"
+                )
+                return
+
+            channels = self._acquisition.channels
+            gauge_indices = [channels.index(f"gauge{i}") for i in range(6)]
+            gauge_chunk = block[gauge_indices, :]
+
+            positions = [
+                p for p in self._acquisition.recent_positions()
+                if t_start <= p.t <= t_end
+            ]
+
+            self._raw_writer.append_trial(
+                trial_index=result.trial_index,
+                gauge_chunk=gauge_chunk,
+                calibration=self._force_calibration,
+                sample_rate_hz=self._acquisition.sample_rate_hz,
+                t0=t_start,
+                commanded_voltage=result.applied_voltage,
+                positions=positions,
+            )
+            self._log_console(
+                f"  [raw] wrote trial {result.trial_index} "
+                f"(stimulus interval {result.stimulus_interval}): "
+                f"{gauge_chunk.shape[1]} samples, {len(positions)} positions"
+            )
+        except Exception as exc:                       # noqa: BLE001
+            self._log_console(f"  [raw] FAILED to write trial: {exc}")
 
     def _announce_interval(self, number: int) -> None:
         # Only prints when reveal_stimulus is True (debug/development mode).

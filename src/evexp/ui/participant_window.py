@@ -53,13 +53,12 @@ class CueTrack(QWidget):
     hard), and its border thickens with distance from target regardless of
     colour, so the feedback still works without colour discrimination.
 
-    The cue is driven by speed, not by the interval duration. It travels at
-    cue_speed_mm_s and reverses at each end of the track, continuing for as
-    long as the interval lasts. Deriving it from the duration instead would
-    tie the pace to the track length, so changing either the interval or the
-    travel distance would silently change the speed the participant is being
-    asked for - and stimulus duration would then vary between speed
-    conditions, which is a confound in its own right.
+    The track is a single one-way sweep: the cue starts at the start marker
+    and travels at cue_speed_mm_s until it reaches the far end, at which
+    point the interval ends (TrialTiming.interval_s is exactly travel_mm /
+    cue_speed_mm_s - see psychophysics/trial.py). There is no return leg and
+    no reversal; a session that used to see one out-and-back stroke per
+    interval now sees one one-way stroke.
 
     Both the square and the force source are fed externally. Today position
     comes from the mouse and force from a simulated or manually-driven
@@ -189,18 +188,17 @@ class CueTrack(QWidget):
         self.update()
 
     def _cue_position_mm(self, elapsed_s: float) -> float:
-        """Cue position for a constant-speed out-and-back sweep.
+        """Cue position for a constant-speed one-way sweep.
 
-        A triangle wave over distance: the cue covers travel_mm, turns
-        around, and comes back, at the same speed throughout.
+        Linear in elapsed time, clamped to the track length. The clamp is a
+        safety net for frame-timing jitter near the end of the interval
+        (interval_s is set to exactly travel_mm / cue_speed_mm_s upstream,
+        so the cue should reach the far end just as the interval ends, not
+        before) - it is not meant to hide a real mismatch between the two.
         """
         if self._cue_speed_mm_s <= 0 or self._travel_mm <= 0:
             return 0.0
-        cycle_mm = 2.0 * self._travel_mm
-        distance = (elapsed_s * self._cue_speed_mm_s) % cycle_mm
-        if distance <= self._travel_mm:
-            return distance
-        return cycle_mm - distance
+        return min(self._travel_mm, elapsed_s * self._cue_speed_mm_s)
 
     def _on_frame(self) -> None:
         if self._running:

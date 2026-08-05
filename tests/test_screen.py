@@ -154,11 +154,13 @@ def test_cue_travels_at_the_requested_speed(qapp, cal):
     assert track._cue_position_mm(2.0) == pytest.approx(100.0)
 
 
-def test_cue_reverses_at_the_end_of_the_track(qapp, cal):
+def test_cue_clamps_at_the_end_of_the_track(qapp, cal):
     track = make_track(qapp, cal, 1920, cue_speed_mm_s=50.0)
-    # 2 s out, then back: at 3 s it has retraced 50 mm.
-    assert track._cue_position_mm(3.0) == pytest.approx(50.0)
-    assert track._cue_position_mm(4.0) == pytest.approx(0.0)
+    # One-way sweep: reaches the far end at travel_mm/speed = 2 s, and stays
+    # there (does not reverse) for any elapsed time beyond that.
+    assert track._cue_position_mm(2.0) == pytest.approx(100.0)
+    assert track._cue_position_mm(3.0) == pytest.approx(100.0)
+    assert track._cue_position_mm(4.0) == pytest.approx(100.0)
 
 
 def test_cue_stays_on_the_track_at_every_speed(qapp, cal):

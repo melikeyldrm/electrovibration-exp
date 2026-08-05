@@ -32,12 +32,37 @@ class TrialState(Enum):
 
 @dataclass
 class TrialTiming:
-    """Timing and pacing parameters shared by every trial in a session."""
+    """Timing and pacing parameters shared by every trial in a session.
+
+    interval_s is deliberately not a settable field. The track is now a
+    single one-way sweep (see CueTrack), so interval duration and sliding
+    speed are no longer independent choices - fixing one over-determines the
+    other. Deriving interval_s from travel and speed keeps that constraint
+    from ever going out of sync, at the cost of stimulus duration now
+    varying with speed condition. That trade-off - versus keeping duration
+    fixed and letting the stroke undershoot the track at low speeds - is the
+    open question logged for Umut; either way there is exactly one number to
+    change, here, in the interval_s property below.
+    """
     pre_interval_wait_s: float = 3.0  # "place your finger", before each interval
-    interval_s: float = 4.0
     gap_s: float = 2.0
     cursor_speed_mm_s: float = 50.0
     cursor_travel_mm: float = 100.0
+
+    def __post_init__(self) -> None:
+        if self.cursor_speed_mm_s <= 0:
+            raise ValueError(
+                f"cursor_speed_mm_s must be > 0, got {self.cursor_speed_mm_s!r}"
+            )
+        if self.cursor_travel_mm <= 0:
+            raise ValueError(
+                f"cursor_travel_mm must be > 0, got {self.cursor_travel_mm!r}"
+            )
+
+    @property
+    def interval_s(self) -> float:
+        """Interval duration: exactly one one-way sweep across the track."""
+        return self.cursor_travel_mm / self.cursor_speed_mm_s
 
 
 @dataclass
