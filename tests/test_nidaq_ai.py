@@ -70,3 +70,26 @@ def test_read_chunk_rejects_non_positive_n_samples():
     d = _started_device()
     with pytest.raises(ValueError):
         d.read_chunk(0)
+
+
+def test_read_chunk_translates_daq_error():
+    from nidaqmx.errors import DaqError
+
+    from evexp.hardware.daq_errors import DaqBufferOverflowError
+
+    class OverflowingReader:
+        def read_many_sample(self, buffer, number_of_samples_per_channel, timeout):
+            raise DaqError("Samples no longer available.", -200279,
+                            task_name="aiTask")
+
+    d = NiDaqDevice(channel_map={"a": "ai0", "b": "ai1"},
+                     device_name="Dev1")
+    d._task = object()
+    d._reader = OverflowingReader()
+    d._sample_rate_hz = 10000.0
+    d._samples_read = 0
+    d._t_start = 0.0
+
+    with pytest.raises(DaqBufferOverflowError) as exc_info:
+        d.read_chunk(500)
+    assert "Dev1" in str(exc_info.value)

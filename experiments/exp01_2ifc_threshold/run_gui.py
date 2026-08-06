@@ -1,5 +1,6 @@
 """Interactive 2IFC threshold session with a real participant."""
 
+import argparse
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -10,8 +11,10 @@ from PyQt5.QtWidgets import QApplication
 from evexp.data.csv_logger import CSVTrialLogger
 from evexp.data.raw_hdf5_writer import RawSessionWriter
 from evexp.hardware.acquisition import SensorAcquisition
-from evexp.hardware.force import ForceCalibration, ManualForceSource, SimulatedForceSource
+from evexp.hardware.force import (AcquisitionForceSource, ForceCalibration,
+                                   ManualForceSource, SimulatedForceSource)
 from evexp.hardware.mock import MockDAQDevice, MockStimulusOutput
+from evexp.hardware.nidaq import NiDaqDevice
 from evexp.processing.force_feedback import ForceBands
 from evexp.hardware.position import ManualPositionSource
 from evexp.hardware.screen import ScreenCalibration
@@ -45,7 +48,23 @@ def write_config_snapshot(cfg: dict, path: Path) -> None:
     path.write_text(header + yaml.safe_dump(cfg, sort_keys=False))
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--real-daq", action="store_true",
+        help="Use NiDaqDevice (real or NI MAX simulated card) instead of "
+             "MockDAQDevice/MockStimulusOutput for both acquisition and "
+             "the stimulus. Default: mock, no hardware needed."
+    )
+    parser.add_argument(
+        "--daq-device-name", default="Dev1",
+        help="NI-DAQmx device name, only used with --real-daq."
+    )
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
     cfg = yaml.safe_load(CONFIG_PATH.read_text())
     session_cfg = cfg["session"]
     timing_cfg = cfg["timing"]
@@ -80,9 +99,24 @@ def main():
     session_cfg["participant_id"] = participant_id
     print(f"Participant {participant_id}, sliding speed {cue_speed_mm_s:g} mm/s")
 
+    # One NiDaqDevice does double duty as both DAQDevice (sensor acquisition)
+    # and StimulusOutput (AO stimulus) - same physical card, two independent
+    # tasks, see hardware/nidaq.py. Mock mode uses two separate objects
+    # instead since MockDAQDevice/MockStimulusOutput were never combined.
+    if args.real_daq:
+        daq = NiDaqDevice(device_name=args.daq_device_name)
+        acquisition_device = daq
+        stimulus_output = daq
+        print(f"DAQ: NiDaqDevice({args.daq_device_name!r}) - "
+              "real or NI MAX simulated card, for BOTH acquisition and stimulus")
+    else:
+        acquisition_device = MockDAQDevice(realtime=True)
+        stimulus_output = MockStimulusOutput(verbose=False)
+        print("DAQ: MockDAQDevice/MockStimulusOutput - no hardware")
+
     staircase = StaircaseController(StaircaseConfig(**cfg["staircase"]))
     trial = Trial2IFC(
-        stimulus=MockStimulusOutput(verbose=False),
+        stimulus=stimulus_output,
         staircase=staircase,
         timing=TrialTiming(
             pre_interval_wait_s=timing_cfg["pre_interval_wait_s"],
@@ -130,11 +164,27 @@ def main():
     position_source = ManualPositionSource(travel_mm=travel_mm)
     print("Position source: mouse (move the pointer along the cue track)")
 
-    # Force feedback. No sensor yet - the "mouse_y" option lets the applied
-    # force be driven deliberately during development (drag the mouse
-    # vertically over the track) instead of only ever showing the on-target
-    # colour. Swapping in a Nano17-backed source later is the only change
-    # needed; the UI and the colour mapping are unaffected.
+    # Continuous sensor acquisition, on its own thread. Built before the
+    # force source below, not after: the "nano17" force option reads
+    # acquisition.latest(), so acquisition has to exist first.
+    acq_cfg = cfg["acquisition"]
+    acquisition = SensorAcquisition(
+        device=acquisition_device,
+        position_source=position_source,
+        ring_seconds=acq_cfg.get("ring_seconds", 30.0),
+        chunk_samples=acq_cfg.get("chunk_samples") or None,
+    )
+    acquisition.start(sample_rate_hz=acq_cfg["sample_rate_hz"])
+    print(f"Acquisition: {len(acquisition.channels)} channels at "
+          f"{acquisition.sample_rate_hz:g} Hz "
+          f"({'real/NI MAX' if args.real_daq else 'simulated'})")
+
+    # Force feedback. "nano17" reads the live normal force off the DAQ's
+    # most recent sample via acquisition.latest() (see
+    # hardware.force.AcquisitionForceSource) - the actual 10 kHz sampling
+    # happens in the acquisition thread above, this just polls the freshest
+    # value at whatever rate the UI timer asks. "mouse_y" and "simulated"
+    # remain for developing without any DAQ channels wired up at all.
     force_cfg = cfg["force"]
     force_bands = ForceBands(
         target_n=force_cfg["target_n"],
@@ -146,27 +196,14 @@ def main():
         force_source = ManualForceSource(initial_n=force_bands.target_n)
     elif force_source_kind == "simulated":
         force_source = SimulatedForceSource(target_n=force_bands.target_n)
+    elif force_source_kind == "nano17":
+        force_source = AcquisitionForceSource(acquisition, force_calibration)
     else:
         raise ValueError(
             f"unknown force.source {force_source_kind!r} in config; "
-            "expected 'mouse_y' or 'simulated' (nano17 not wired in yet)"
+            "expected 'mouse_y', 'simulated', or 'nano17'"
         )
     print(f"Force source: {force_source_kind}")
-
-    # Continuous sensor acquisition, on its own thread. Nothing displays it
-    # yet; it runs from here so that the threading, the shutdown path and the
-    # timing diagnostics are exercised in every session rather than only once
-    # the real card arrives.
-    acq_cfg = cfg["acquisition"]
-    acquisition = SensorAcquisition(
-        device=MockDAQDevice(realtime=True),
-        position_source=position_source,
-        ring_seconds=acq_cfg.get("ring_seconds", 30.0),
-        chunk_samples=acq_cfg.get("chunk_samples") or None,
-    )
-    acquisition.start(sample_rate_hz=acq_cfg["sample_rate_hz"])
-    print(f"Acquisition: {len(acquisition.channels)} channels at "
-          f"{acquisition.sample_rate_hz:g} Hz (simulated)")
 
     # Stopping from aboutToQuit rather than after app.exec_() so that the
     # worker is joined on every exit path, including the window being closed
@@ -174,6 +211,10 @@ def main():
     def shutdown() -> None:
         acquisition.stop()
         print(acquisition.stats().describe())
+        # AO task is separate from acquisition's AI task and is not closed
+        # by acquisition.stop() - close it explicitly if it was left running.
+        if args.real_daq and stimulus_output.is_active:
+            stimulus_output.stimulus_off()
 
     app.aboutToQuit.connect(shutdown)
 

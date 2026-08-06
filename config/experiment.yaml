@@ -109,12 +109,16 @@ force:
   # column, separate from full_scale_n (which is where the display colour
   # saturates). Left unset it defaults to 30% of full_scale_n.
   in_band_half_width_n:
-  # No force sensor yet. "mouse_y" lets the experimenter drive the applied
-  # force with the mouse's vertical position during development - drag up
-  # for more force, down for less - so the feedback colours can be exercised
-  # deliberately rather than waited on. Switch to "simulated" for a
-  # hands-off drifting signal, or "nano17" once the sensor is wired in.
-  source: mouse_y
+  # "mouse_y" lets the experimenter drive the applied force with the
+  # mouse's vertical position during development - drag up for more force,
+  # down for less - so the feedback colours can be exercised deliberately
+  # rather than waited on. "simulated" gives a hands-off drifting signal.
+  # "nano17" reads the live normal force off the DAQ's gauge0..gauge5
+  # channels (AcquisitionForceSource, hardware/force.py) - wired in, but
+  # still reports raw volts wearing a newton label until Umut's real .cal
+  # file replaces ForceCalibration.placeholder() a few lines above this in
+  # run_gui.py.
+  source: mouse_y #nano17
 
 acquisition:
   # Continuous sensor acquisition. 10 kHz is comfortable for this setup: the

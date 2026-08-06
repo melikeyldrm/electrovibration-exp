@@ -254,3 +254,41 @@ class ManualForceSource(ForceSource):
     def read_normal_force(self) -> Optional[float]:
         with self._lock:
             return self._value
+
+
+class AcquisitionForceSource(ForceSource):
+    """Live normal force for the UI, read from the DAQ's most recent sample.
+
+    Where the 6 gauge channels are actually measured is the acquisition
+    thread, at the full 10 kHz sample rate - see SensorAcquisition and
+    NiDaqDevice/MockDAQDevice. This class does not read the card itself; it
+    reads SensorAcquisition.latest(), which that thread keeps updated on
+    every chunk. Callers - in practice, SessionController's 20 Hz sensor
+    timer - therefore see the true instantaneous value each poll, without
+    needing their own 10 kHz loop: a colour swatch or force number redrawn
+    faster than about 30-60 Hz buys nothing a person can perceive, so the
+    UI polls at a comfortable rate and lets the acquisition thread do the
+    actual high-rate sampling underneath it.
+
+    Returns None (no contact) rather than 0 N if acquisition has not
+    produced a sample yet, or if any of the six gauge channels named in
+    gauge_names is missing from the device's channel map - both distinct
+    from "zero force", which is a real, calibrated reading.
+    """
+
+    def __init__(self, acquisition, calibration: "ForceCalibration",
+                 gauge_names: Sequence[str] = (
+                     "gauge0", "gauge1", "gauge2", "gauge3", "gauge4", "gauge5")):
+        self._acquisition = acquisition
+        self._calibration = calibration
+        self._gauge_names = tuple(gauge_names)
+
+    def read_normal_force(self) -> Optional[float]:
+        latest = self._acquisition.latest()
+        if latest is None:
+            return None
+        try:
+            gauge_volts = np.array([latest[name] for name in self._gauge_names])
+        except KeyError:
+            return None
+        return float(self._calibration.normal_force(gauge_volts))

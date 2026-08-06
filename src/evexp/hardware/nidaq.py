@@ -36,6 +36,7 @@ from typing import Optional, Sequence, Tuple
 import numpy as np
 
 from evexp.hardware.base import DAQDevice, SensorChunk, StimulusOutput
+from evexp.hardware.daq_errors import translate_daq_error
 from evexp.hardware.safety import check_voltage_limit
 from evexp.processing.waveform import cycles_to_duration_s, generate_sine_wave
 
@@ -168,6 +169,9 @@ class NiDaqDevice(DAQDevice, StimulusOutput):
             self._buffer = None
 
             task.start()
+        except nidaqmx.DaqError as e:
+            task.close()
+            raise translate_daq_error(e, device=self.device_name) from e
         except Exception:
             task.close()
             raise
@@ -192,11 +196,20 @@ class NiDaqDevice(DAQDevice, StimulusOutput):
         if self._buffer is None or self._buffer.shape[1] != n_samples:
             self._buffer = np.empty((len(self._channels), n_samples))
 
-        self._reader.read_many_sample(
-            self._buffer,
-            number_of_samples_per_channel=n_samples,
-            timeout=timeout_s,
-        )
+        try:
+            self._reader.read_many_sample(
+                self._buffer,
+                number_of_samples_per_channel=n_samples,
+                timeout=timeout_s,
+            )
+        except Exception as e:
+            # DaqError only becomes importable once nidaqmx itself has been
+            # imported (start() did that), so importing it here rather than
+            # at module level keeps this file loadable without the driver.
+            import nidaqmx
+            if isinstance(e, nidaqmx.DaqError):
+                raise translate_daq_error(e, device=self.device_name) from e
+            raise
 
         t0 = self._t_start + self._samples_read / self._sample_rate_hz
         self._samples_read += n_samples
@@ -281,6 +294,11 @@ class NiDaqDevice(DAQDevice, StimulusOutput):
             self._ao_task = task
             self._write_signal(self._current_signal())
             task.start()
+        except nidaqmx.DaqError as e:
+            task.close()
+            self._ao_task = None
+            self._ao_writer = None
+            raise translate_daq_error(e, device=self.device_name) from e
         except Exception:
             task.close()
             self._ao_task = None
@@ -308,7 +326,13 @@ class NiDaqDevice(DAQDevice, StimulusOutput):
     def _write_signal(self, signal: np.ndarray) -> None:
         """Safety check, then write. No other path reaches the AO task."""
         check_voltage_limit(signal, limit_v=self.ao_voltage_limit_v)
-        self._ao_writer.write_many_sample(signal)
+        try:
+            self._ao_writer.write_many_sample(signal)
+        except Exception as e:
+            import nidaqmx
+            if isinstance(e, nidaqmx.DaqError):
+                raise translate_daq_error(e, device=self.device_name) from e
+            raise
 
     # --- diagnostics -------------------------------------------------------
 

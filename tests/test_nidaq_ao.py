@@ -74,3 +74,21 @@ def test_set_amplitude_over_hardware_limit_raises():
     d._stimulus_active = True
     with pytest.raises(SafetyLimitExceeded):
         d.set_amplitude(2.5)
+
+
+def test_write_signal_translates_daq_error():
+    from nidaqmx.errors import DaqError
+
+    from evexp.hardware.daq_errors import DaqDeviceBusyError
+
+    class BusyWriter:
+        def write_many_sample(self, signal):
+            raise DaqError("Resource already reserved.", -200022,
+                            task_name="aoTask")
+
+    d = NiDaqDevice(device_name="Dev1", ao_voltage_limit_v=2.0)
+    d._ao_writer = BusyWriter()
+
+    with pytest.raises(DaqDeviceBusyError) as exc_info:
+        d._write_signal(np.array([0.5, -0.5]))
+    assert "Dev1" in str(exc_info.value)
