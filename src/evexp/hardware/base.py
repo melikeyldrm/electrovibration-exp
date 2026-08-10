@@ -103,7 +103,8 @@ class SensorChunk:
             ) from None
 
     def latest(self) -> SensorSample:
-        """The final sample of the block, as a per-channel mapping."""
+        """The final sample of the block, as a per-channel mapping. """
+        # to use at gui 
         return SensorSample(
             timestamp=self.t_end,
             values={name: float(self.data[i, -1])

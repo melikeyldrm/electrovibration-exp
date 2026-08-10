@@ -15,7 +15,7 @@ import numpy as np
 
 from evexp.hardware.force import ForceCalibration
 from evexp.hardware.position import PositionSample
-from evexp.processing.resample import hold_to_grid
+from evexp.processing.signal import hold_to_grid
 
 
 def _speeds_from_positions(positions: List[PositionSample]):

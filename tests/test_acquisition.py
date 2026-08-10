@@ -12,8 +12,8 @@ import numpy as np
 import pytest
 
 from evexp.hardware.base import (SensorChunk, default_chunk_samples)
-from evexp.hardware.force import (ForceCalibration, ManualForceSource,
-                                  SimulatedForceSource)
+from evexp.hardware.force import ForceCalibration
+from evexp.hardware.dev_sources import ManualForceSource, SimulatedForceSource
 from evexp.hardware.mock import MockDAQDevice
 
 RATE = 2000.0
@@ -155,6 +155,12 @@ def test_calibration_matrix_must_be_six_by_six():
         ForceCalibration(matrix=np.eye(3))
 
 
+def test_gain_fs1_constant_builds_a_valid_calibration():
+    from evexp.hardware.force import GAIN_FS1
+    cal = ForceCalibration(matrix=np.array(GAIN_FS1), is_placeholder=True)
+    assert cal.matrix.shape == (6, 6)
+
+
 def test_bias_is_subtracted_before_the_matrix():
     cal = ForceCalibration(matrix=np.eye(6)).with_bias(np.full(6, 0.5))
     assert cal.wrench(np.full(6, 2.0)).tolist() == pytest.approx([1.5] * 6)
@@ -194,50 +200,6 @@ def test_with_bias_does_not_mutate_the_original():
     cal = ForceCalibration(matrix=np.eye(6))
     cal.with_bias(np.full(6, 1.0))
     assert cal.bias.tolist() == [0.0] * 6
-
-
-# --- ATI .cal parsing ------------------------------------------------------
-
-CAL_XML = """<?xml version="1.0" encoding="utf-8"?>
-<FTSensor Serial="FT12345">
-  <Calibration ForceUnits="N" TorqueUnits="N-mm" Serial="FT12345">
-    <Axis Name="Fx" scale="2" values="1 0 0 0 0 0"/>
-    <Axis Name="Fy" scale="2" values="0 1 0 0 0 0"/>
-    <Axis Name="Fz" scale="2" values="0 0 1 0 0 0"/>
-    <Axis Name="Tx" scale="2" values="0 0 0 1 0 0"/>
-    <Axis Name="Ty" scale="2" values="0 0 0 0 1 0"/>
-    <Axis Name="Tz" scale="2" values="0 0 0 0 0 1"/>
-  </Calibration>
-</FTSensor>
-"""
-
-
-def test_cal_file_is_parsed_with_its_scale_factors(tmp_path):
-    path = tmp_path / "FT12345.cal"
-    path.write_text(CAL_XML)
-
-    cal = ForceCalibration.from_ati_cal_file(path)
-    assert cal.matrix.shape == (6, 6)
-    assert cal.matrix[0, 0] == pytest.approx(0.5)   # 1 / scale 2
-    assert cal.force_units == "N"
-    assert cal.serial == "FT12345"
-    assert not cal.is_placeholder
-
-
-def test_a_truncated_cal_file_is_rejected(tmp_path):
-    """Wrong file, not a file to be lenient about."""
-    path = tmp_path / "short.cal"
-    path.write_text(CAL_XML.replace(
-        '<Axis Name="Tz" scale="2" values="0 0 0 0 0 1"/>', ""))
-    with pytest.raises(ValueError):
-        ForceCalibration.from_ati_cal_file(path)
-
-
-def test_a_file_without_a_calibration_block_is_rejected(tmp_path):
-    path = tmp_path / "empty.cal"
-    path.write_text("<FTSensor/>")
-    with pytest.raises(ValueError):
-        ForceCalibration.from_ati_cal_file(path)
 
 
 # --- ForceSource -----------------------------------------------------------

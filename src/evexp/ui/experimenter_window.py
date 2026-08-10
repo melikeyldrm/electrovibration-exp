@@ -1,14 +1,12 @@
 """Experimenter-facing monitor window.
 
-Shows everything the participant must not see: applied voltage, which interval
-carried the stimulus, whether each response was correct, the live state of the
-staircase, and the participant's live finger speed.
+Shows everything the participant must not see: applied voltage, which
+interval carried the stimulus, correctness, live staircase state, and the
+participant's live finger speed.
 
-Laid out as a console rather than a form: status fields are scannable cards
-along the top, the staircase trace and the trial log sit in a resizable
-splitter below. During a session the experimenter is watching the participant,
-not the screen, so anything that needs noticing has to be noticeable at a
-glance.
+Laid out as a console: status cards along the top, staircase trace and
+trial log in a resizable splitter below - scannable at a glance, since the
+experimenter is watching the participant, not the screen.
 """
 
 import math
@@ -64,11 +62,11 @@ class StatusCard(QFrame):
 class ConvergencePlot(QWidget):
     """Live staircase trace, updated after every trial.
 
-    Drawn on a logarithmic voltage axis. The staircase steps in dB, so on a
-    linear axis every step shrinks as the voltage falls and the trace
-    collapses into an unreadable smear exactly where it matters most - around
-    the threshold. On a log axis each dB step is the same height, so reversals
-    and convergence are visible at a glance.
+    Drawn on a log voltage axis: the staircase steps in dB, so on a linear
+    axis every step shrinks as voltage falls and the trace collapses into a
+    smear right where it matters most, near the threshold. On a log axis
+    each dB step is the same height, so reversals and convergence are
+    visible at a glance.
     """
 
     PADDING_LEFT = 62
@@ -355,9 +353,9 @@ class ExperimenterWindow(QWidget):
     def update_speed(self, speed_mm_s: Optional[float]) -> None:
         """Refresh the live finger-speed readout.
 
-        Pass None when no finger is detected. The deviation from target is
-        shown next to the raw value so the experimenter can judge at a glance
-        whether the participant needs correcting.
+        Pass None when no finger is detected. Deviation from target is
+        shown next to the raw value so the experimenter can judge at a
+        glance whether the participant needs correcting.
         """
         base = (f"color: %s; background-color: {theme.CONSOLE_PANEL};"
                 f"border: 1px solid {theme.CONSOLE_BORDER};"
@@ -445,9 +443,8 @@ class ExperimenterWindow(QWidget):
     def keyPressEvent(self, event) -> None:
         """Escape ends the session, with confirmation.
 
-        This lives here rather than on the participant window so that a
-        participant leaning on the keyboard cannot truncate a session
-        mid-staircase.
+        Lives here rather than on the participant window so a participant
+        leaning on the keyboard can't truncate a session mid-staircase.
         """
         if event.key() != Qt.Key_Escape:
             super().keyPressEvent(event)
@@ -466,6 +463,5 @@ class ExperimenterWindow(QWidget):
             QApplication.quit()
 
     def clear_message(self) -> None:
-        """Hide the announcement line.
-        """
+        """Hide the announcement line."""
         self._message.setVisible(False)

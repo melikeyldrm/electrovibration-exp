@@ -1,24 +1,12 @@
 """Continuous acquisition on a worker thread.
 
-The Qt event loop must never wait. A device read at 10 kHz blocks for the
-duration of the block it returns, so it happens here, on a thread of its
-own, and the interface only ever reads a value that is already sitting in
-memory.
+The Qt event loop must never block, so a device read at 10 kHz happens on
+its own thread; the worker writes the ring buffer and a snapshot, and the
+Qt timer (~30 Hz) only ever reads that snapshot under a lock. Nothing but
+plain data crosses the lock - the worker must never touch a Qt object.
 
-The division of labour is strict:
-
-    worker thread     blocks on the device, writes the ring buffer,
-                      updates the snapshot. Touches no Qt object.
-    Qt timer, ~30 Hz  reads the snapshot under a lock and draws.
-
-Nothing is passed between them except plain data behind a lock. The worker
-holding a reference to a widget would be a crash waiting for a slow session,
-and Qt gives no warning before it happens.
-
-Sampling the position source here as well is deliberate. Driven from the UI
-it is sampled whenever the mouse happens to move, which is neither regular
-nor aligned with anything else; sampled once per block it lands on the same
-clock as the force channels, and a trial's force and speed can afterwards be
+The position source is also sampled here, once per block, so it lands on
+the same clock as the force channels and a trial's force/speed can later be
 cut from the same time window without interpolation.
 """
 
@@ -36,12 +24,8 @@ from evexp.hardware.position import PositionSample, PositionSource
 
 @dataclass(frozen=True)
 class AcquisitionStats:
-    """What the read loop has managed so far.
-
-    Worth watching during a session rather than after one: lag_s growing
-    steadily means the loop is losing to the device, and the useful moment
-    to notice that is before the driver's buffer overflows and takes the
-    data with it.
+    """Read-loop health. lag_s growing steadily means the loop is falling
+    behind the device - worth catching before the driver buffer overflows.
     """
 
     running: bool
@@ -68,13 +52,10 @@ class AcquisitionStats:
 class RingBuffer:
     """Fixed-capacity circular store for multi-channel samples.
 
-    Sized in seconds rather than samples by the caller. Old data is
-    overwritten without ceremony: this is a window onto the recent past, not
-    the session record, and the session record is written elsewhere.
-
-    Absolute sample indices are tracked so that a stretch of the buffer can
-    be addressed by when it happened rather than by where it landed, which
-    is what cutting a trial out of it needs.
+    A window onto the recent past, not the session record - old data is
+    overwritten without ceremony. Absolute sample indices are tracked so a
+    stretch can be addressed by when it happened, not where it landed,
+    which is what cutting a trial out of it needs.
     """
 
     def __init__(self, n_channels: int, capacity_samples: int):

@@ -20,7 +20,7 @@ import pytest
 from evexp.hardware.acquisition import (AcquisitionStats, RingBuffer,
                                         SensorAcquisition)
 from evexp.hardware.mock import MockDAQDevice
-from evexp.hardware.position import ManualPositionSource
+from evexp.hardware.dev_sources import ManualPositionSource
 
 RATE = 2000.0
 

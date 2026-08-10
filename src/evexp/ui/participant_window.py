@@ -1,25 +1,19 @@
 """Fullscreen window shown to the participant.
 
-Deliberately minimal: the participant must not see the applied voltage, which
-interval carried the stimulus, whether their previous answer was correct, or
-their numeric finger speed. All of that lives in the experimenter window on a
-separate screen - a changing number in front of the participant would compete
-with the perceptual task.
+Deliberately minimal: the participant must not see applied voltage, which
+interval carried the stimulus, correctness, or numeric finger speed - all
+of that lives in the experimenter window on a separate screen so it doesn't
+compete with the perceptual task. The one thing shown indirectly is applied
+force, as the fill colour/border of the participant's own position marker -
+feedback about their own present action, not a result to interpret.
 
-The one number that *is* shown to the participant, indirectly, is applied
-force - as the fill colour and border weight of their own position marker.
-That is feedback about the participant's own present action, not a result to
-be interpreted, so it does not compete with the perceptual task the way a
-numeric readout would.
+No keyboard shortcut closes this window; ending a session is the
+experimenter's call from the console, so a stray Escape can't truncate a
+session mid-staircase.
 
-There is no keyboard shortcut to close this window. Ending a session is the
-experimenter's decision, made from the console; a stray Escape keypress by the
-participant must not truncate a session mid-staircase.
-
-All geometry here is specified in millimetres and converted to pixels through
-a ScreenCalibration at draw time. Sliding speed is an experimental variable,
-so the cue track has to be the same physical length - and the pacing cue the
-same physical speed - regardless of the window it happens to be drawn in.
+All geometry is specified in millimetres and converted to pixels through a
+ScreenCalibration at draw time, so the cue track is the same physical
+length and speed regardless of the window it's drawn in.
 """
 
 import math
@@ -41,29 +35,23 @@ from evexp.ui import theme
 class CueTrack(QWidget):
     """Pacing cue plus the participant's own tracked position.
 
-    Two markers share one track: a circle moving at a fixed physical speed
-    (the pace the participant is asked to match), and a square showing where
-    the participant's finger actually is. The gap between them *is* the speed
-    feedback - no numeric readout is needed, and the two markers differ in
-    both shape and hue so they stay distinguishable without relying on colour
-    discrimination.
+    Two markers share one track: a circle at fixed physical speed (the pace
+    to match) and a square showing where the finger actually is. The gap
+    between them *is* the speed feedback - no numeric readout needed - and
+    the two differ in shape and hue so they stay distinguishable without
+    relying on colour discrimination.
 
-    The square's own fill and border additionally carry force feedback: its
-    colour moves from blue (too light) through green (on target) to red (too
-    hard), and its border thickens with distance from target regardless of
-    colour, so the feedback still works without colour discrimination.
+    The square's fill/border additionally carry force feedback: blue (too
+    light) through green (on target) to red (too hard), with border
+    thickness scaling by distance from target regardless of colour.
 
-    The track is a single one-way sweep: the cue starts at the start marker
-    and travels at cue_speed_mm_s until it reaches the far end, at which
-    point the interval ends (TrialTiming.interval_s is exactly travel_mm /
-    cue_speed_mm_s - see psychophysics/trial.py). There is no return leg and
-    no reversal; a session that used to see one out-and-back stroke per
-    interval now sees one one-way stroke.
+    A single one-way sweep: the cue starts at the start marker and travels
+    at cue_speed_mm_s until the far end, at which point the interval ends
+    (TrialTiming.interval_s = travel_mm / cue_speed_mm_s). No return leg.
 
-    Both the square and the force source are fed externally. Today position
-    comes from the mouse and force from a simulated or manually-driven
-    source; when the Neonode sensor and the Nano17 are wired up, nothing
-    here changes.
+    Position and force are both fed externally - today from the mouse and a
+    simulated/manual source; nothing here changes once the Neonode and
+    Nano17 are wired up.
     """
 
     FRAME_INTERVAL_MS = 16    # ~60 fps
@@ -214,12 +202,10 @@ class CueTrack(QWidget):
     def mouseMoveEvent(self, event) -> None:
         """Feed pointer position into the position and (if manual) force sources.
 
-        Only ManualPositionSource has push(); a real sensor source produces
-        its own samples and ignores the mouse entirely. The same applies to
-        force: ManualForceSource is a development stand-in, driven here by
-        the pointer's vertical position (up = more force) so the feedback
-        colours can be exercised deliberately instead of only ever showing
-        the on-target colour.
+        Only ManualPositionSource/ManualForceSource have push(); a real
+        sensor source produces its own samples and ignores the mouse. Force
+        is driven by pointer vertical position (up = more) purely so the
+        feedback colours can be exercised deliberately during development.
         """
         if self._track_visible:
             push_position = getattr(self._position_source, "push", None)
@@ -317,14 +303,11 @@ class CueTrack(QWidget):
 class ParticipantWindow(QWidget):
     """Participant-facing display and keyboard input.
 
-    Key handling is gated by an input mode rather than accepted at all times,
-    so a participant pressing 1 during an interval cannot desynchronise the
-    trial state machine.
-
-    The layout uses fixed-height text areas so that the track stays at a
-    constant screen position through every phase - the participant is
-    touching the screen, so the track drifting as text changes length would
-    be worse than cosmetic.
+    Key handling is gated by an input mode, not accepted at all times, so a
+    stray keypress during an interval can't desynchronise the trial state
+    machine. Fixed-height text areas keep the track at a constant screen
+    position through every phase - the participant is touching the screen,
+    so drift as text length changes would be worse than cosmetic.
     """
 
     COUNTDOWN_TICK_MS = 100

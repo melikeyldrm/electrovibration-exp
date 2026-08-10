@@ -4,6 +4,7 @@ import argparse
 import sys
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 import yaml
 from PyQt5.QtWidgets import QApplication
@@ -11,12 +12,11 @@ from PyQt5.QtWidgets import QApplication
 from evexp.data.csv_logger import CSVTrialLogger
 from evexp.data.raw_hdf5_writer import RawSessionWriter
 from evexp.hardware.acquisition import SensorAcquisition
-from evexp.hardware.force import (AcquisitionForceSource, ForceCalibration,
-                                   ManualForceSource, SimulatedForceSource)
+from evexp.hardware.force import AcquisitionForceSource, ForceCalibration, measure_bias
+from evexp.hardware.dev_sources import ManualForceSource, ManualPositionSource, SimulatedForceSource
 from evexp.hardware.mock import MockDAQDevice, MockStimulusOutput
 from evexp.hardware.nidaq import NiDaqDevice
 from evexp.processing.force_feedback import ForceBands
-from evexp.hardware.position import ManualPositionSource
 from evexp.hardware.screen import ScreenCalibration
 from evexp.psychophysics.staircase import StaircaseConfig, StaircaseController
 from evexp.psychophysics.trial import Trial2IFC, TrialTiming
@@ -60,11 +60,49 @@ def parse_args():
         "--daq-device-name", default="Dev1",
         help="NI-DAQmx device name, only used with --real-daq."
     )
+    parser.add_argument(
+        "--list-screens", action="store_true",
+        help="Print the index and geometry of every connected monitor, "
+             "then exit. Use this to find the right "
+             "display.participant_screen_index before a real session."
+    )
     return parser.parse_args()
+
+
+def list_screens() -> None:
+    app = QApplication(sys.argv)
+    for i, screen in enumerate(app.screens()):
+        geo = screen.geometry()
+        primary = " (primary)" if screen is app.primaryScreen() else ""
+        print(f"[{i}] {screen.name()}{primary}: "
+              f"{geo.width()}x{geo.height()} at ({geo.x()}, {geo.y()})")
+
+
+def move_to_screen(window, app: QApplication, screen_index: Optional[int]) -> None:
+    """Move window onto the requested monitor before showing it fullscreen.
+
+    Qt's showFullScreen() fills whichever screen the window is currently on
+    - normally wherever it was created, i.e. the primary monitor - so on a
+    two-monitor rig the participant window has to be moved explicitly or it
+    opens on the experimenter's screen instead of the touchscreen.
+    """
+    if screen_index is None:
+        return
+    screens = app.screens()
+    if not 0 <= screen_index < len(screens):
+        print(f"WARNING: participant_screen_index {screen_index} is out of "
+              f"range (0-{len(screens) - 1} available); using the default "
+              "screen instead. Run with --list-screens to check indices.")
+        return
+    window.move(screens[screen_index].geometry().topLeft())
 
 
 def main():
     args = parse_args()
+    if args.list_screens:
+        list_screens()
+        sys.exit(0)
+
     cfg = yaml.safe_load(CONFIG_PATH.read_text())
     session_cfg = cfg["session"]
     timing_cfg = cfg["timing"]
@@ -141,11 +179,9 @@ def main():
     raw_writer = RawSessionWriter(raw_path)
     print(f"Raw per-trial signals (fx/fy/fz, voltage, speed) -> {raw_path}")
 
-    # No .cal file yet (see hardware/force.py), so forces are raw volts
-    # wearing a newton label until Umut's Nano17 calibration arrives - the
-    # placeholder still exercises the whole raw-recording path end to end.
+    # No .cal file yet (see hardware/force.py) - forces are raw volts
+    # wearing a newton label until Umut's Nano17 matrix arrives.
     force_calibration = ForceCalibration.placeholder()
-    print(f"Force calibration: {force_calibration.describe()}")
 
     snapshot_path = output_path.with_suffix(".yaml")
     write_config_snapshot(cfg, snapshot_path)
@@ -178,6 +214,13 @@ def main():
     print(f"Acquisition: {len(acquisition.channels)} channels at "
           f"{acquisition.sample_rate_hz:g} Hz "
           f"({'real/NI MAX' if args.real_daq else 'simulated'})")
+
+    # Bias: once per session, right after acquisition starts, nothing
+    # touching the sensor. 
+    print("Measuring force bias (nothing touching the sensor)...")
+    bias = measure_bias(acquisition, n_samples=100)
+    force_calibration = force_calibration.with_bias(bias)
+    print(f"Force calibration: {force_calibration.describe()}")
 
     # Force feedback. "nano17" reads the live normal force off the DAQ's
     # most recent sample via acquisition.latest() (see
@@ -247,6 +290,7 @@ def main():
     )
 
     experimenter.show()
+    move_to_screen(participant, app, display_cfg.get("participant_screen_index"))
     if display_cfg.get("fullscreen", False):
         participant.showFullScreen()
     else:

@@ -45,6 +45,14 @@ display:
   # track to be shrunk to fit, which breaks the calibration. Left false
   # during development so the experimenter console stays reachable.
   fullscreen: false
+  # Which physical monitor the participant window opens on, by index into
+  # QApplication.screens() (0 = primary). Leave empty/null to use whatever
+  # screen the window happens to open on by default (usually the primary
+  # one) - fine for single-monitor development, but for a real session with
+  # two monitors this MUST be set so the participant window lands on the
+  # touchscreen and not the experimenter's monitor. Run with --list-screens
+  # to see the index/geometry of each connected screen before setting this.
+  participant_screen_index:
 
 staircase:
   # 3-down/1-up (Levitt 1971), targeting ~79.4% correct.

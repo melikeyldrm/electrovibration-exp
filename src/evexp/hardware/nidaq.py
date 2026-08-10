@@ -1,33 +1,14 @@
-"""NI-DAQmx implementation of DAQDevice.
+"""NI-DAQmx implementation of DAQDevice + StimulusOutput.
 
-Not yet used by any session: the real card has not been wired in, and
-MockDAQDevice stands in everywhere. It is kept current anyway so that
-switching over is a change of constructor rather than a rewrite, and so that
-the decisions that are easy to get wrong are already made and written down.
+AI (sensors) and AO (stimulus) are two independent tasks, own sample
+clocks - not combined, so one doesn't block the other.
 
-Three of those decisions matter enough to state plainly.
-
-Blocks, not samples. The previous version called Task.read() with no
-arguments, which reads one sample. At 1 kHz that survives; at 10 kHz the
-per-call overhead alone exceeds the sample interval, the driver's buffer
-fills and DAQmx raises error -200279. read_many_sample() into a preallocated
-array reads a whole block per call and allocates nothing.
-
-An explicit buffer. cfg_samp_clk_timing() picks a default buffer size when
-samps_per_chan is omitted, and the default is not generous. Sizing it in
-seconds means a scheduling hiccup in the read loop costs latency instead of
-data.
-
-One task for every channel. Sharing a single sample clock across all inputs
-makes them simultaneous by construction. Separate tasks per sensor would
-need their timing reconciled afterwards, on data that has already been
-recorded.
-
-NiDaqDevice also implements StimulusOutput, on a separate AO task with its
-own sample clock: input and output run independently on the card, and tying
-them to one task would only complicate both. Every buffer written to the AO
-task passes through safety.check_voltage_limit first - there is no path from
-set_amplitude()/stimulus_on() to hardware that skips it.
+Key decisions:
+- read_many_sample() into a preallocated buffer, not Task.read() per
+  sample - the latter overflows the driver buffer at 10 kHz.
+- Explicit samps_per_chan (buffer_seconds) - the DAQmx default is too small.
+- One AI task for all channels - shares a sample clock, keeps them in sync.
+- Every AO write goes through safety.check_voltage_limit first.
 """
 
 import time
@@ -38,7 +19,7 @@ import numpy as np
 from evexp.hardware.base import DAQDevice, SensorChunk, StimulusOutput
 from evexp.hardware.daq_errors import translate_daq_error
 from evexp.hardware.safety import check_voltage_limit
-from evexp.processing.waveform import cycles_to_duration_s, generate_sine_wave
+from evexp.processing.signal import cycles_to_duration_s, generate_sine_wave
 
 # Physical channels for an ATI Nano17's six bridges, wired to ai0..ai5.
 DEFAULT_CHANNEL_MAP = {
@@ -51,35 +32,20 @@ DEFAULT_CHANNEL_MAP = {
 }
 
 # AO defaults for the electrovibration carrier.
-#
-# 125 Hz, not kHz: Vardar & Kuchenbecker (2021, J. R. Soc. Interface) ran the
-# same hardware this project uses - SCT3250 3M touchscreen, PCIe-6321 DAQ,
-# Tabor 9200A amplifier - at a 125 Hz input voltage frequency, chosen so the
-# resulting electrovibration force (at 2x input, per the V^2 relationship)
-# lands at 250 Hz, near the centre of peak mechanoreceptor sensitivity
-# (200-300 Hz). Other papers in this literature use comparable values (100,
-# 120, 180, 270, 480 Hz) - all tens to a few hundred Hz, never kHz. An
-# earlier version of this file had 10 kHz here, which was wrong: confirm
-# against Umut's protocol before relying on this default for real data.
-#
-# 200 kHz sample rate still applies: at 125 Hz that is 1600 samples/cycle,
-# comfortably smooth and well under the PCIe-6321's ~900 kS/s AO limit.
+
+# 200 kHz sample rate: 1600 samples/cycle, within PCIe-6321's AO limit.
+# 5 cycles/buffer: was 1000 (8s, 1.6M samples) -
 DEFAULT_AO_CHANNEL = "ao0"
 DEFAULT_STIMULUS_FREQUENCY_HZ = 125.0
 DEFAULT_AO_SAMPLE_RATE_HZ = 200_000.0
-DEFAULT_AO_CYCLES_PER_BUFFER = 1000
+DEFAULT_AO_CYCLES_PER_BUFFER = 5
 
 
 class NiDaqDevice(DAQDevice, StimulusOutput):
     """NI card: analog input for sensors, analog output for the stimulus.
 
-    channel_map is an ordered mapping from the name a chunk will carry to
-    the card's physical channel. Both the names and the order come from
-    configuration rather than from this file, because a miswired channel
-    that is merely mislabelled produces data that looks fine and is wrong.
-
-    AI and AO run as two independent tasks on separate sample clocks; see
-    the module docstring for why they are not combined.
+    channel_map maps a chunk's channel name to the card's physical channel;
+    comes from config, not hardcoded here, to keep miswiring visible.
     """
 
     def __init__(self, device_name: str = "Dev1",
@@ -156,16 +122,11 @@ class NiDaqDevice(DAQDevice, StimulusOutput):
                 sample_mode=AcquisitionType.CONTINUOUS,
                 samps_per_chan=samps_per_chan,
             )
-            # The driver derives a buffer from samps_per_chan, but says so
-            # only implicitly; setting it outright removes the guesswork.
+            # Buffer size set explicitly - the driver's default is small.
             task.in_stream.input_buf_size = samps_per_chan
 
             self._reader = AnalogMultiChannelReader(task.in_stream)
-            # Not preallocated to samps_per_chan: that number sizes the
-            # DAQmx driver's own buffer (in-stream), which is unrelated to
-            # the array Python reads into per call. read_chunk() allocates
-            # its own read buffer, sized to whatever n_samples it is asked
-            # for.
+            # Sized in read_chunk() per call, not here - see comment there.
             self._buffer = None
 
             task.start()
@@ -188,11 +149,9 @@ class NiDaqDevice(DAQDevice, StimulusOutput):
         if n_samples <= 0:
             raise ValueError(f"n_samples must be positive, got {n_samples!r}")
 
-        # Reallocated only when the requested size changes (in practice:
-        # once, on the first call - callers ask for the same chunk_samples
-        # every time). A slice of a larger array is not guaranteed
-        # C-contiguous, which read_many_sample() requires; a right-sized
-        # array always is.
+        # Reallocated only if size changes (normally once). Must be a
+        # right-sized array, not a slice - read_many_sample() needs
+        # C-contiguous.
         if self._buffer is None or self._buffer.shape[1] != n_samples:
             self._buffer = np.empty((len(self._channels), n_samples))
 
@@ -203,9 +162,8 @@ class NiDaqDevice(DAQDevice, StimulusOutput):
                 timeout=timeout_s,
             )
         except Exception as e:
-            # DaqError only becomes importable once nidaqmx itself has been
-            # imported (start() did that), so importing it here rather than
-            # at module level keeps this file loadable without the driver.
+            # Imported here, not at module top, so this file loads without
+            # the driver installed.
             import nidaqmx
             if isinstance(e, nidaqmx.DaqError):
                 raise translate_daq_error(e, device=self.device_name) from e

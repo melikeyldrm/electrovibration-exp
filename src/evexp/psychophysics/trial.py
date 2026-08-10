@@ -34,15 +34,11 @@ class TrialState(Enum):
 class TrialTiming:
     """Timing and pacing parameters shared by every trial in a session.
 
-    interval_s is deliberately not a settable field. The track is now a
-    single one-way sweep (see CueTrack), so interval duration and sliding
-    speed are no longer independent choices - fixing one over-determines the
-    other. Deriving interval_s from travel and speed keeps that constraint
-    from ever going out of sync, at the cost of stimulus duration now
-    varying with speed condition. That trade-off - versus keeping duration
-    fixed and letting the stroke undershoot the track at low speeds - is the
-    open question logged for Umut; either way there is exactly one number to
-    change, here, in the interval_s property below.
+    interval_s is deliberately not a settable field: the track is a single
+    one-way sweep, so interval duration and sliding speed are not
+    independent - it's derived from travel/speed instead, so stimulus
+    duration varies with speed condition rather than the two ever
+    disagreeing.
     """
     pre_interval_wait_s: float = 3.0  # "place your finger", before each interval
     gap_s: float = 2.0
@@ -78,11 +74,9 @@ class TrialResult:
     response_time_s: float
     training: bool = False    # True for training trials; staircase not updated
 
-    # Filled in by SessionController after submit_response() returns, not by
-    # Trial2IFC itself - the trial state machine has no hardware dependency,
-    # so it neither knows about nor computes these. None means "no force
-    # source was configured for this session", distinct from a force reading
-    # of zero.
+    # Filled in by SessionController after submit_response(), not by
+    # Trial2IFC (hardware-free). None means "no force source configured",
+    # distinct from a force reading of zero.
     mean_normal_force_n: Optional[float] = None
     std_normal_force_n: Optional[float] = None
     force_in_band_fraction: Optional[float] = None
