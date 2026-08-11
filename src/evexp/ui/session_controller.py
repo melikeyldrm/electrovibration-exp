@@ -91,7 +91,8 @@ class SessionController(QObject):
         # calibration dependency and the interval boundary marks (see
         # ui/recording_controller.py for why this is split out).
         self._recording = RecordingController(
-            acquisition, raw_writer, force_calibration, log_fn=self._log_console)
+            acquisition, raw_writer, force_calibration, force_bands,
+            log_fn=self._log_console)
         self._trial_start_perf = 0.0
 
         self._sensor_timer = QTimer(self)
@@ -166,8 +167,11 @@ class SessionController(QObject):
             self._recording.write_trial(result)
 
         # Filled in here rather than by Trial2IFC, since these come from
-        # hardware the trial state machine has no knowledge of.
-        if self._force_accumulator is not None:
+        # hardware the trial state machine has no knowledge of. Skipped if
+        # RecordingController already set exact stats from the ring-buffer
+        # window above (raw recording enabled) - the poll-based accumulator
+        # is a fallback for when raw recording is off.
+        if self._force_accumulator is not None and result.mean_normal_force_n is None:
             stats = self._force_accumulator.stats()
             result.mean_normal_force_n = stats.mean_n
             result.std_normal_force_n = stats.std_n

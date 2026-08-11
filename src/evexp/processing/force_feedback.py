@@ -17,6 +17,8 @@ without reading a number.
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
+import numpy as np
+
 from evexp.ui import theme
 
 
@@ -212,3 +214,26 @@ class ForceTrialAccumulator:
             n_samples=self._n_samples,
             n_contact_samples=n,
         )
+
+
+def force_stats_from_samples(forces_n: np.ndarray, bands: ForceBands) -> ForceTrialStats:
+    """Exact per-trial stats from a full sample array (e.g. a ring-buffer
+    window cut for this trial), rather than ForceTrialAccumulator's online
+    summary of sparse 20 Hz polling. Every sample here is contact - unlike
+    the accumulator, there is no "no contact" reading to filter out, since
+    the window is a slice of a continuous DAQ stream, not touch events.
+    """
+    n = forces_n.shape[0]
+    if n == 0:
+        return ForceTrialStats(
+            mean_n=None, std_n=None, in_band_fraction=0.0,
+            n_samples=0, n_contact_samples=0,
+        )
+    mean_n = float(np.mean(forces_n))
+    std_n = float(np.std(forces_n, ddof=1)) if n >= 2 else 0.0
+    in_band = int(np.count_nonzero(
+        np.abs(forces_n - bands.target_n) <= bands.effective_in_band_half_width_n))
+    return ForceTrialStats(
+        mean_n=mean_n, std_n=std_n, in_band_fraction=in_band / n,
+        n_samples=n, n_contact_samples=n,
+    )

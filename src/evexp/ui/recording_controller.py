@@ -12,6 +12,7 @@ from typing import Callable, Optional
 from evexp.hardware.acquisition import SensorAcquisition
 from evexp.hardware.force import ForceCalibration
 from evexp.data.raw_hdf5_writer import RawSessionWriter
+from evexp.processing.force_feedback import ForceBands, force_stats_from_samples
 
 
 class RecordingController:
@@ -27,11 +28,13 @@ class RecordingController:
         acquisition: Optional[SensorAcquisition],
         raw_writer: Optional[RawSessionWriter],
         force_calibration: Optional[ForceCalibration],
+        force_bands: Optional[ForceBands] = None,
         log_fn: Callable[[str], None] = print,
     ):
         self._acquisition = acquisition
         self._raw_writer = raw_writer
         self._force_calibration = force_calibration
+        self._force_bands = force_bands
         self._log = log_fn
         self.enabled = (
             acquisition is not None and raw_writer is not None
@@ -83,6 +86,16 @@ class RecordingController:
             channels = self._acquisition.channels
             gauge_indices = [channels.index(f"gauge{i}") for i in range(6)]
             gauge_chunk = block[gauge_indices, :]
+
+            # Exact force stats from the same samples as the raw HDF5 write,
+            # not the sparse 20 Hz poll SessionController's accumulator uses
+            # - keeps the CSV summary consistent with the raw signal.
+            if self._force_bands is not None:
+                forces_n = self._force_calibration.normal_force(gauge_chunk)
+                stats = force_stats_from_samples(forces_n, self._force_bands)
+                result.mean_normal_force_n = stats.mean_n
+                result.std_normal_force_n = stats.std_n
+                result.force_in_band_fraction = stats.in_band_fraction
 
             positions = [
                 p for p in self._acquisition.recent_positions()

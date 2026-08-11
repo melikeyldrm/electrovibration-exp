@@ -5,10 +5,12 @@ that will happen after watching a real participant - band width, smoothing
 window - can be checked without a display.
 """
 
+import numpy as np
 import pytest
 
 from evexp.processing.force_feedback import (ForceBands, ForceSmoother,
-                                              force_border_px, force_color)
+                                              force_border_px, force_color,
+                                              force_stats_from_samples)
 from evexp.ui import theme
 
 
@@ -155,3 +157,35 @@ def test_reset_clears_history():
     smoother.add(9.0)
     smoother.reset()
     assert smoother.add(0.2) == pytest.approx(0.2)
+
+
+# --- force_stats_from_samples: exact stats from a ring-buffer window -------
+
+def test_stats_from_samples_matches_manual_mean_and_std(bands):
+    forces = np.array([1.0, 1.05, 0.95, 1.5, 0.5])
+    stats = force_stats_from_samples(forces, bands)
+    assert stats.mean_n == pytest.approx(1.0)
+    assert stats.std_n == pytest.approx(float(np.std(forces, ddof=1)))
+    assert stats.n_samples == 5
+    assert stats.n_contact_samples == 5
+
+
+def test_stats_from_samples_empty_window_returns_none(bands):
+    stats = force_stats_from_samples(np.array([]), bands)
+    assert stats.mean_n is None
+    assert stats.std_n is None
+    assert stats.in_band_fraction == 0.0
+    assert stats.n_samples == 0
+
+
+def test_stats_from_samples_single_sample_has_zero_std(bands):
+    stats = force_stats_from_samples(np.array([1.0]), bands)
+    assert stats.mean_n == pytest.approx(1.0)
+    assert stats.std_n == pytest.approx(0.0)
+
+
+def test_stats_from_samples_in_band_fraction_matches_bands_definition(bands):
+    # bands: target=1.0, full_scale=0.5 -> in-band half-width = 0.3*0.5 = 0.15
+    forces = np.array([1.0, 1.1, 1.5, 0.5])  # first two in band, last two not
+    stats = force_stats_from_samples(forces, bands)
+    assert stats.in_band_fraction == pytest.approx(0.5)
