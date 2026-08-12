@@ -108,5 +108,5 @@ class RawSessionWriter:
             group.create_dataset("fz", data=forces[2])
             group.create_dataset("voltage", data=voltage_held)
             group.create_dataset("speed_mm_s", data=speed_held)
-            # TODO (pending Umut): a "current" channel belongs here too,
+            # TODO (pending ): a "current" channel belongs here too,
             # once the amplifier-side measurement it comes from is decided.

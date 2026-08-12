@@ -28,13 +28,7 @@ from evexp.hardware.position import PositionSample, PositionSource
 
 
 class NeonodeConnectionError(RuntimeError):
-    """The sensor could not be opened or stopped responding.
-
-    Deliberately its own type (not a bare RuntimeError) so SessionController
-    setup code can catch this specifically and fall back to a dev source
-    (ManualPositionSource) instead of crashing the whole session on a
-    hardware fault that has nothing to do with the trial logic.
-    """
+    """The sensor could not be opened or stopped responding."""
 
 
 @dataclass(frozen=True)
@@ -177,9 +171,7 @@ class NeonodePositionSource(PositionSource):
     def connect(self) -> None:
         """Open the transport and start the background read thread.
 
-        Raises NeonodeConnectionError if the device can't be opened - callers
-        (session setup code) should catch this and fall back to a dev
-        source rather than let it crash the whole session.
+        Raises NeonodeConnectionError if the device can't be opened.
         """
         self._transport.open()
         self._stop_requested.clear()
