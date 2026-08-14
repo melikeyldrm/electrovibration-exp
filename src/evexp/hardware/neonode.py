@@ -1,9 +1,5 @@
 """Neonode NNAMC1580PCEV IR position sensor - PositionSource implementation.
-
-SKELETON. USB enumeration is currently failing on every machine tried
-(hardware/cable fault suspected - see the mail thread with Umut), so the
-actual over-the-wire protocol has never been observed and is not
-implemented here. What IS in place and testable right now:
+ What IS in place and testable right now:
 
     - the connection lifecycle (connect/disconnect, error taxonomy)
     - the background-thread + lock pattern that turns a stream of device
@@ -88,7 +84,7 @@ class HidNeonodeTransport(NeonodeTransport):
         vendor SDK instead of raw hidapi
     """
 
-    # TODO: unconfirmed placeholders - overwrite once the device enumerates.
+    # TODO: sensor takınca doldur:
     VENDOR_ID = 0x0000
     PRODUCT_ID = 0x0000
 

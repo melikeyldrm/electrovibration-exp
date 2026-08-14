@@ -10,7 +10,7 @@ import yaml
 from PyQt5.QtWidgets import QApplication
 
 from evexp.data.csv_logger import CSVTrialLogger
-from evexp.data.raw_hdf5_writer import RawSessionWriter
+from evexp.data.raw_csv_writer import RawTrialWriter
 from evexp.hardware.acquisition import SensorAcquisition
 from evexp.hardware.force import AcquisitionForceSource, ForceCalibration, measure_bias
 from evexp.hardware.dev_sources import ManualForceSource, ManualPositionSource, SimulatedForceSource
@@ -168,16 +168,26 @@ def main():
           f"({timing_cfg['cursor_travel_mm']:g} mm / {cue_speed_mm_s:g} mm/s, one-way)")
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_path = Path(session_cfg["output_dir"]) / (
-        f"{session_cfg['experiment_id']}_{participant_id}_{stamp}.csv"
+
+    # Everything for this participant lives in one folder; filenames are
+    # built from participant id, speed condition and trial number, with one
+    # session stamp shared by every file from the same run.
+    participant_dir = Path(session_cfg["output_dir"]) / f"p{participant_id}"
+    participant_dir.mkdir(parents=True, exist_ok=True)
+    output_path = participant_dir / (
+        f"p{participant_id}_s{cue_speed_mm_s:g}_staircase_{stamp}.csv"
     )
 
     logger = CSVTrialLogger(str(output_path))
     print(f"Logging trials to {output_path}")
 
-    raw_path = output_path.with_name(output_path.stem + "_raw").with_suffix(".h5")
-    raw_writer = RawSessionWriter(raw_path)
-    print(f"Raw per-trial signals (fx/fy/fz, voltage, speed) -> {raw_path}")
+    raw_writer = RawTrialWriter(
+        output_dir=session_cfg["output_dir"],
+        participant_id=participant_id,
+        speed_mm_s=cue_speed_mm_s,
+        stamp=stamp,
+    )
+    print(f"Raw per-trial CSVs -> {raw_writer.participant_dir}")
 
     # No .cal file yet (see hardware/force.py) - forces are raw volts
     # wearing a newton label until Umut's Nano17 matrix arrives.

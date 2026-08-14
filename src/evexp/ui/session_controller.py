@@ -20,7 +20,9 @@ from typing import Optional
 from PyQt5.QtCore import QObject, QTimer
 
 from evexp.data.csv_logger import CSVTrialLogger
-from evexp.data.raw_hdf5_writer import RawSessionWriter
+
+from evexp.data.raw_csv_writer import RawTrialWriter
+
 from evexp.hardware.acquisition import SensorAcquisition
 from evexp.hardware.force import ForceCalibration, ForceSource
 from evexp.hardware.position import PositionSource
@@ -55,7 +57,7 @@ class SessionController(QObject):
         force_bands: Optional[ForceBands] = None,
         cursor_speed_mm_s: Optional[float] = None,
         acquisition: Optional[SensorAcquisition] = None,
-        raw_writer: Optional[RawSessionWriter] = None,
+        raw_writer: Optional[RawTrialWriter] = None,
         force_calibration: Optional[ForceCalibration] = None,
     ):
         super().__init__()
@@ -151,6 +153,10 @@ class SessionController(QObject):
             self.participant.show_response_prompt()
             self._log_console("  -> press 1 or 2")
             self._recording.mark_interval2_end()
+            # Cut interval 2 after a short delay, not immediately: the
+            # acquisition thread reads in ~50 ms chunks, so the tail of the
+            # interval has not landed in the ring buffer yet.
+            QTimer.singleShot(250, self._recording.capture_interval2)
 
         self._refresh_status()
         if duration_s is not None:
