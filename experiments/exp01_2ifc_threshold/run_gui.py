@@ -190,7 +190,7 @@ def main():
     print(f"Raw per-trial CSVs -> {raw_writer.participant_dir}")
 
     # No .cal file yet (see hardware/force.py) - forces are raw volts
-    # wearing a newton label until Umut's Nano17 matrix arrives.
+    # wearing a newton label until  Nano17 matrix arrives.
     force_calibration = ForceCalibration.placeholder()
 
     snapshot_path = output_path.with_suffix(".yaml")
