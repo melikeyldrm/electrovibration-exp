@@ -160,15 +160,15 @@ def test_latest_carries_every_channel(acq):
 def test_latest_channel_by_name(acq):
     acq.start(RATE)
     wait_for_chunks(acq, 2)
-    assert acq.latest_channel("gauge0") == pytest.approx(
-        acq.latest()["gauge0"])
+    assert acq.latest_channel("fs1_gauge0") == pytest.approx(
+        acq.latest()["fs1_gauge0"])
 
 
 def test_unknown_channel_name_is_an_error(acq):
     acq.start(RATE)
     wait_for_chunks(acq, 2)
     with pytest.raises(KeyError):
-        acq.latest_channel("gauge9")
+        acq.latest_channel("fs1_gauge9")
 
 
 def test_recent_returns_a_window_of_the_stream(acq):

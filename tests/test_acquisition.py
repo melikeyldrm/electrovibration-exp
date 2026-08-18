@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from evexp.hardware.base import (SensorChunk, default_chunk_samples)
-from evexp.hardware.force import ForceCalibration
+from evexp.hardware.force import DualForceCalibration, ForceCalibration
 from evexp.hardware.dev_sources import ManualForceSource, SimulatedForceSource
 from evexp.hardware.mock import MockDAQDevice
 
@@ -200,6 +200,51 @@ def test_with_bias_does_not_mutate_the_original():
     cal = ForceCalibration(matrix=np.eye(6))
     cal.with_bias(np.full(6, 1.0))
     assert cal.bias.tolist() == [0.0] * 6
+
+
+# --- DualForceCalibration --------------------------------------------------
+
+def test_dual_sums_the_two_sensors():
+    """Both sensors carry the plate, so the plate's force is their sum."""
+    cal = DualForceCalibration(fs1=ForceCalibration(matrix=np.eye(6)),
+                               fs2=ForceCalibration(matrix=np.eye(6)))
+    volts = np.concatenate([np.array([1.0, 0.0, 2.0, 0.0, 0.0, 0.0]),
+                            np.array([0.0, 0.0, 3.0, 0.0, 0.0, 0.0])])
+    assert cal.normal_force(volts) == pytest.approx(5.0)
+
+
+def test_dual_keeps_the_sensors_apart_before_summing():
+    """Each sensor's own matrix must be applied to its own six gauges."""
+    cal = DualForceCalibration(fs1=ForceCalibration(matrix=np.eye(6) * 2.0),
+                               fs2=ForceCalibration(matrix=np.eye(6) * 3.0))
+    volts = np.ones(12)
+    forces1, forces2 = cal.forces_per_sensor(volts)
+    assert forces1[2] == pytest.approx(2.0)
+    assert forces2[2] == pytest.approx(3.0)
+
+
+def test_dual_rejects_a_single_sensor_block():
+    cal = DualForceCalibration.placeholder()
+    with pytest.raises(ValueError):
+        cal.normal_force(np.zeros(6))
+
+
+def test_dual_bias_applies_per_sensor():
+    cal = DualForceCalibration.placeholder().with_bias(
+        np.full(6, 1.0), np.full(6, 4.0))
+    volts = np.concatenate([np.full(6, 2.0), np.full(6, 5.0)])
+    assert cal.normal_force(volts) == pytest.approx(2.0)
+
+
+def test_dual_handles_a_whole_block_at_once():
+    cal = DualForceCalibration.placeholder()
+    block = np.ones((12, 32))
+    assert cal.forces_in_screen_frame(block).shape == (3, 32)
+
+
+def test_gain_matrices_are_marked_placeholder():
+    """Until the sensors' own .cal files arrive, the numbers are not forces."""
+    assert DualForceCalibration.from_gain_matrices().is_placeholder
 
 
 # --- ForceSource -----------------------------------------------------------

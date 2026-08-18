@@ -4,13 +4,13 @@ import numpy as np
 import pytest
 
 from evexp.data.raw_csv_writer import RawTrialWriter
-from evexp.hardware.force import ForceCalibration
+from evexp.hardware.force import DualForceCalibration, ForceCalibration
 from evexp.hardware.position import PositionSample
 
 
 @pytest.fixture
 def placeholder_calibration():
-    return ForceCalibration.placeholder()
+    return DualForceCalibration.placeholder()
 
 
 def _read_rows(path):
@@ -24,7 +24,7 @@ def test_creates_file_only_after_write_trial(tmp_path, placeholder_calibration):
     path = writer._trial_path(0)
     assert not path.exists()
 
-    writer.write_trial(0, np.zeros((6, 10)), np.zeros((6, 10)),
+    writer.write_trial(0, np.zeros((12, 10)), np.zeros((12, 10)),
                         placeholder_calibration, sample_rate_hz=10000.0,
                         t0_interval1=0.0, t0_interval2=1.0,
                         voltage_interval1=0.0, voltage_interval2=1.5,
@@ -44,15 +44,15 @@ def test_columns_and_row_count(tmp_path, placeholder_calibration):
     writer = RawTrialWriter(tmp_path, participant_id="003", speed_mm_s=50.0,
                              stamp="stamp")
     n1, n2 = 100, 150
-    writer.write_trial(0, np.zeros((6, n1)), np.zeros((6, n2)),
+    writer.write_trial(0, np.zeros((12, n1)), np.zeros((12, n2)),
                         placeholder_calibration, sample_rate_hz=10000.0,
                         t0_interval1=0.0, t0_interval2=1.0,
                         voltage_interval1=1.0, voltage_interval2=0.0,
                         stimulus_interval=1)
     rows = _read_rows(writer._trial_path(0))
     assert list(rows[0].keys()) == [
-        "interval", "time_s", "fx", "fy", "fz", "voltage_v", "current_a",
-        "actuation", "speed_mm_s",
+        "interval", "time_s", "fx1", "fy1", "fz1", "fx2", "fy2", "fz2",
+        "fx", "fy", "fz", "voltage_v", "current_a", "actuation", "speed_mm_s",
     ]
     assert len(rows) == n1 + n2
     assert sum(1 for r in rows if r["interval"] == "1") == n1
@@ -62,7 +62,7 @@ def test_columns_and_row_count(tmp_path, placeholder_calibration):
 def test_actuation_marks_stimulus_interval(tmp_path, placeholder_calibration):
     writer = RawTrialWriter(tmp_path, participant_id="003", speed_mm_s=50.0,
                              stamp="stamp")
-    writer.write_trial(0, np.zeros((6, 10)), np.zeros((6, 10)),
+    writer.write_trial(0, np.zeros((12, 10)), np.zeros((12, 10)),
                         placeholder_calibration, sample_rate_hz=10000.0,
                         t0_interval1=0.0, t0_interval2=1.0,
                         voltage_interval1=0.0, voltage_interval2=1.5,
@@ -78,7 +78,7 @@ def test_voltage_channel_holds_commanded_value_per_interval(
         tmp_path, placeholder_calibration):
     writer = RawTrialWriter(tmp_path, participant_id="003", speed_mm_s=50.0,
                              stamp="stamp")
-    writer.write_trial(0, np.zeros((6, 10)), np.zeros((6, 10)),
+    writer.write_trial(0, np.zeros((12, 10)), np.zeros((12, 10)),
                         placeholder_calibration, sample_rate_hz=10000.0,
                         t0_interval1=0.0, t0_interval2=1.0,
                         voltage_interval1=0.0, voltage_interval2=1.75,
@@ -100,7 +100,7 @@ def test_speed_derived_and_held_from_positions(tmp_path, placeholder_calibration
         PositionSample(t=0.0, x_mm=0.0),
         PositionSample(t=0.005, x_mm=1.0),
     ]
-    writer.write_trial(0, np.zeros((6, n)), np.zeros((6, n)),
+    writer.write_trial(0, np.zeros((12, n)), np.zeros((12, n)),
                         placeholder_calibration, sample_rate_hz=10000.0,
                         t0_interval1=0.0, t0_interval2=1.0,
                         voltage_interval1=0.0, voltage_interval2=0.0,
@@ -116,7 +116,7 @@ def test_speed_derived_and_held_from_positions(tmp_path, placeholder_calibration
 def test_no_positions_gives_nan_speed(tmp_path, placeholder_calibration):
     writer = RawTrialWriter(tmp_path, participant_id="003", speed_mm_s=50.0,
                              stamp="stamp")
-    writer.write_trial(0, np.zeros((6, 20)), np.zeros((6, 20)),
+    writer.write_trial(0, np.zeros((12, 20)), np.zeros((12, 20)),
                         placeholder_calibration, sample_rate_hz=10000.0,
                         t0_interval1=0.0, t0_interval2=1.0,
                         voltage_interval1=0.0, voltage_interval2=0.0,
@@ -128,7 +128,7 @@ def test_no_positions_gives_nan_speed(tmp_path, placeholder_calibration):
 def test_current_defaults_to_nan_when_not_provided(tmp_path, placeholder_calibration):
     writer = RawTrialWriter(tmp_path, participant_id="003", speed_mm_s=50.0,
                              stamp="stamp")
-    writer.write_trial(0, np.zeros((6, 5)), np.zeros((6, 5)),
+    writer.write_trial(0, np.zeros((12, 5)), np.zeros((12, 5)),
                         placeholder_calibration, sample_rate_hz=10000.0,
                         t0_interval1=0.0, t0_interval2=1.0,
                         voltage_interval1=0.0, voltage_interval2=0.0,
@@ -141,7 +141,7 @@ def test_current_channel_written_when_provided(tmp_path, placeholder_calibration
     writer = RawTrialWriter(tmp_path, participant_id="003", speed_mm_s=50.0,
                              stamp="stamp")
     current1 = np.full(5, 0.42)
-    writer.write_trial(0, np.zeros((6, 5)), np.zeros((6, 5)),
+    writer.write_trial(0, np.zeros((12, 5)), np.zeros((12, 5)),
                         placeholder_calibration, sample_rate_hz=10000.0,
                         t0_interval1=0.0, t0_interval2=1.0,
                         voltage_interval1=0.0, voltage_interval2=0.0,
@@ -154,25 +154,29 @@ def test_current_channel_written_when_provided(tmp_path, placeholder_calibration
 
 def test_forces_use_the_calibration(tmp_path):
     # A non-identity calibration should visibly change fx/fy/fz vs raw volts.
-    matrix = np.eye(6) * 2.0  # doubles every raw gauge value
-    cal = ForceCalibration(matrix=matrix)
+    # FS1 doubles, FS2 triples, so fz must be the sum of the two - not one
+    # sensor's contribution silently standing in for both.
+    cal = DualForceCalibration(fs1=ForceCalibration(matrix=np.eye(6) * 2.0),
+                               fs2=ForceCalibration(matrix=np.eye(6) * 3.0))
     writer = RawTrialWriter(tmp_path, participant_id="003", speed_mm_s=50.0,
                              stamp="stamp")
-    gauge_chunk = np.full((6, 10), 3.0)
+    gauge_chunk = np.full((12, 10), 3.0)
     writer.write_trial(0, gauge_chunk, gauge_chunk, cal,
                         sample_rate_hz=10000.0,
                         t0_interval1=0.0, t0_interval2=1.0,
                         voltage_interval1=0.0, voltage_interval2=0.0,
                         stimulus_interval=1)
     rows = _read_rows(writer._trial_path(0))
-    assert all(float(r["fz"]) == pytest.approx(6.0) for r in rows)
+    assert all(float(r["fz1"]) == pytest.approx(6.0) for r in rows)
+    assert all(float(r["fz2"]) == pytest.approx(9.0) for r in rows)
+    assert all(float(r["fz"]) == pytest.approx(15.0) for r in rows)
 
 
 def test_wrong_gauge_shape_raises(tmp_path, placeholder_calibration):
     writer = RawTrialWriter(tmp_path, participant_id="003", speed_mm_s=50.0,
                              stamp="stamp")
     with pytest.raises(ValueError):
-        writer.write_trial(0, np.zeros((5, 10)), np.zeros((6, 10)),
+        writer.write_trial(0, np.zeros((6, 10)), np.zeros((12, 10)),
                             placeholder_calibration, sample_rate_hz=10000.0,
                             t0_interval1=0.0, t0_interval2=1.0,
                             voltage_interval1=0.0, voltage_interval2=0.0,
@@ -183,7 +187,7 @@ def test_multiple_trials_each_get_their_own_file(tmp_path, placeholder_calibrati
     writer = RawTrialWriter(tmp_path, participant_id="003", speed_mm_s=50.0,
                              stamp="stamp")
     for i in range(3):
-        writer.write_trial(i, np.zeros((6, 10)), np.zeros((6, 10)),
+        writer.write_trial(i, np.zeros((12, 10)), np.zeros((12, 10)),
                             placeholder_calibration, sample_rate_hz=10000.0,
                             t0_interval1=0.0, t0_interval2=1.0,
                             voltage_interval1=0.0, voltage_interval2=0.0,

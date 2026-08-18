@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from evexp.hardware.force import ForceCalibration
+from evexp.hardware.force import ALL_GAUGE_CHANNELS, DualForceCalibration
 from evexp.ui.recording_controller import RecordingController
 
 
@@ -23,8 +23,7 @@ class FakeAcquisition:
     controlling when window() is called, without needing a real clock.
     """
 
-    def __init__(self, n_samples=100, channels=("gauge0", "gauge1", "gauge2",
-                                                  "gauge3", "gauge4", "gauge5")):
+    def __init__(self, n_samples=100, channels=ALL_GAUGE_CHANNELS):
         self.channels = channels
         self.sample_rate_hz = 10000.0
         self.window_calls = []
@@ -71,7 +70,7 @@ def controller():
     acquisition = FakeAcquisition()
     writer = FakeWriter()
     controller = RecordingController(
-        acquisition, writer, ForceCalibration.placeholder(),
+        acquisition, writer, DualForceCalibration.placeholder(),
         force_bands=None, log_fn=lambda msg: None,
     )
     return controller, acquisition, writer
@@ -124,8 +123,8 @@ def test_write_trial_independent_of_when_it_is_called(controller):
 
     assert len(writer.calls) == 1
     call = writer.calls[0]
-    assert call["gauge1"].shape == (6, 100)
-    assert call["gauge2"].shape == (6, 100)
+    assert call["gauge1"].shape == (12, 100)
+    assert call["gauge2"].shape == (12, 100)
 
 
 def test_write_trial_skips_if_interval_not_captured(controller):
@@ -143,7 +142,7 @@ def test_new_trial_clears_previous_captures():
     acquisition = FakeAcquisition()
     writer = FakeWriter()
     controller = RecordingController(
-        acquisition, writer, ForceCalibration.placeholder(),
+        acquisition, writer, DualForceCalibration.placeholder(),
         log_fn=lambda msg: None,
     )
     controller.mark_interval1_start()
@@ -168,7 +167,7 @@ def test_empty_window_skips_that_interval_only():
     acquisition = EmptyWindowAcquisition()
     writer = FakeWriter()
     controller = RecordingController(
-        acquisition, writer, ForceCalibration.placeholder(),
+        acquisition, writer, DualForceCalibration.placeholder(),
         log_fn=lambda msg: None,
     )
     controller.mark_interval1_start()
@@ -215,11 +214,10 @@ def test_voltage_written_only_on_stimulus_interval(controller):
 
 
 def test_current_channel_passed_through_when_present():
-    acquisition = FakeAcquisition(channels=(
-        "gauge0", "gauge1", "gauge2", "gauge3", "gauge4", "gauge5", "current"))
+    acquisition = FakeAcquisition(channels=ALL_GAUGE_CHANNELS + ("current",))
     writer = FakeWriter()
     controller = RecordingController(
-        acquisition, writer, ForceCalibration.placeholder(),
+        acquisition, writer, DualForceCalibration.placeholder(),
         log_fn=lambda msg: None,
     )
     controller.mark_interval1_start()

@@ -1,19 +1,27 @@
 """Raw gauge volts -> normal force.
 
-Nano17 reports 6 gauge voltages; the 6x6 matrix, bias, and mounting
-rotation convert that to Fx/Fy/Fz/Tx/Ty/Tz. Real matrix comes from ATI's
-.cal file. Until then, is_placeholder marks the numbers as not real forces.
+The rig carries two ATI Nano17s under the same plate. Each reports 6 gauge
+voltages and has its own 6x6 matrix and its own bias; the plate's total
+force is the sum of the two, so both are calibrated separately and only
+then added. Real matrices come from ATI's .cal files - until they arrive,
+is_placeholder marks the numbers as not real forces.
 """
 
 import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Tuple
 
 import numpy as np
 
-# Borrowed from another Nano17 ( Setup_FS1.5.py), not this sensor's
-# real .cal. Swap for the real matrix when it arrives.
+# Channel names for the two sensors, in gauge order. The acquisition device
+# publishes all twelve on one clock; these names pick each sensor's six out.
+FS1_GAUGE_CHANNELS: Tuple[str, ...] = tuple(f"fs1_gauge{i}" for i in range(6))
+FS2_GAUGE_CHANNELS: Tuple[str, ...] = tuple(f"fs2_gauge{i}" for i in range(6))
+ALL_GAUGE_CHANNELS: Tuple[str, ...] = FS1_GAUGE_CHANNELS + FS2_GAUGE_CHANNELS
+
+# From Setup_FS1.5.py - the rig's two sensors, but not read from their .cal
+# files. Swap for the real matrices when they arrive.
 GAIN_FS1 = [
     [-0.00196, -0.06523, -0.07955, -1.66690, -0.03715, 1.57517],
     [0.07846, 1.91376, -0.04191, -0.99642, 0.02254, -0.85845],
@@ -22,11 +30,25 @@ GAIN_FS1 = [
     [-11.77058, 0.62323, 7.15594, 10.39180, 5.67526, -9.73148],
     [0.30751, 7.34154, 0.35701, 7.75355, -0.14530, 6.72782],
 ]
+GAIN_FS2 = [
+    [-0.00195, 0.01080, 0.06581, -1.65824, -0.09366, 1.64348],
+    [-0.17825, 1.86454, 0.06494, -0.92514, 0.00966, -0.97718],
+    [1.89526, -0.01688, 1.83664, -0.00175, 1.85168, -0.00273],
+    [-1.14584, 11.34313, 10.51476, -5.61246, -10.06706, -5.95481],
+    [-12.55627, 0.04926, 5.41259, 10.20378, 6.61359, -10.16940],
+    [-0.76650, 7.03372, -0.09259, 7.02651, -0.52256, 7.07061],
+]
+
+# Setup_FS1.5.py negates Fy after summing the two sensors. Expressed here as
+# a mounting rotation rather than a sign buried in the summing code, so the
+# frame convention lives in one place. Replace with the measured mounting
+# rotation once the sensor orientation relative to the screen is known.
+FLIP_Y = np.diag([1.0, -1.0, 1.0])
 
 
 @dataclass(frozen=True)
 class ForceCalibration:
-    """matrix: (6,6) rows Fx..Tz, cols gauges. bias: (6,). mounting: (3,3)."""
+    """One sensor. matrix: (6,6) rows Fx..Tz, cols gauges. bias: (6,). mounting: (3,3)."""
 
     matrix: np.ndarray
     bias: np.ndarray = field(default_factory=lambda: np.zeros(6))
@@ -94,6 +116,76 @@ class ForceCalibration:
         return f"{label}: {self.force_units}/{self.torque_units}, {biased}, {rotated}"
 
 
+@dataclass(frozen=True)
+class DualForceCalibration:
+    """Both sensors. Gauge volts arrive stacked (12,) or (12,n): rows 0-5
+    are FS1, rows 6-11 FS2, matching ALL_GAUGE_CHANNELS.
+
+    Exposes the same forces/normal_force/tangential_force interface as a
+    single ForceCalibration, so the writers and force sources do not need to
+    know how many sensors are under the plate.
+    """
+
+    fs1: ForceCalibration
+    fs2: ForceCalibration
+
+    @classmethod
+    def from_gain_matrices(cls, gain_fs1=GAIN_FS1, gain_fs2=GAIN_FS2,
+                           mounting: np.ndarray = FLIP_Y,
+                           is_placeholder: bool = True) -> "DualForceCalibration":
+        def one(gain, serial):
+            return ForceCalibration(
+                matrix=np.asarray(gain, dtype=float),
+                mounting=np.asarray(mounting, dtype=float),
+                serial=serial, is_placeholder=is_placeholder,
+            )
+        return cls(fs1=one(gain_fs1, "FS1"), fs2=one(gain_fs2, "FS2"))
+
+    @classmethod
+    def placeholder(cls) -> "DualForceCalibration":
+        return cls(fs1=ForceCalibration.placeholder(),
+                   fs2=ForceCalibration.placeholder())
+
+    @property
+    def is_placeholder(self) -> bool:
+        return self.fs1.is_placeholder or self.fs2.is_placeholder
+
+    def with_bias(self, bias_fs1: Sequence[float],
+                  bias_fs2: Sequence[float]) -> "DualForceCalibration":
+        return DualForceCalibration(fs1=self.fs1.with_bias(bias_fs1),
+                                    fs2=self.fs2.with_bias(bias_fs2))
+
+    @staticmethod
+    def split(gauge_volts: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        raw = np.asarray(gauge_volts, dtype=float)
+        if raw.shape[0] != 12:
+            raise ValueError(
+                f"expected 12 gauge channels (6 per sensor), got {raw.shape[0]}")
+        return raw[:6], raw[6:]
+
+    def forces_per_sensor(self, gauge_volts: np.ndarray
+                          ) -> Tuple[np.ndarray, np.ndarray]:
+        """Each sensor's Fx/Fy/Fz in the screen frame, kept separate."""
+        volts1, volts2 = self.split(gauge_volts)
+        return (self.fs1.forces_in_screen_frame(volts1),
+                self.fs2.forces_in_screen_frame(volts2))
+
+    def forces_in_screen_frame(self, gauge_volts: np.ndarray) -> np.ndarray:
+        """Total Fx/Fy/Fz on the plate: the two sensors carry it in parallel."""
+        forces1, forces2 = self.forces_per_sensor(gauge_volts)
+        return forces1 + forces2
+
+    def normal_force(self, gauge_volts: np.ndarray) -> np.ndarray:
+        return self.forces_in_screen_frame(gauge_volts)[2]
+
+    def tangential_force(self, gauge_volts: np.ndarray) -> np.ndarray:
+        forces = self.forces_in_screen_frame(gauge_volts)
+        return np.hypot(forces[0], forces[1])
+
+    def describe(self) -> str:
+        return f"two sensors - FS1 {self.fs1.describe()}; FS2 {self.fs2.describe()}"
+
+
 class ForceSource(ABC):
     """Provides the participant's current normal force."""
 
@@ -104,8 +196,7 @@ class ForceSource(ABC):
 
 def measure_bias(acquisition, n_samples: int = 100,
                   poll_interval_s: float = 0.001,
-                  gauge_names: Sequence[str] = (
-                      "gauge0", "gauge1", "gauge2", "gauge3", "gauge4", "gauge5")
+                  gauge_names: Sequence[str] = ALL_GAUGE_CHANNELS
                   ) -> np.ndarray:
     """Average n_samples of gauge_names; call once at session start, no touch."""
     samples = []
@@ -117,12 +208,20 @@ def measure_bias(acquisition, n_samples: int = 100,
     return np.mean(samples, axis=0)
 
 
+def measure_dual_bias(acquisition, n_samples: int = 100,
+                      poll_interval_s: float = 0.001
+                      ) -> Tuple[np.ndarray, np.ndarray]:
+    """Both sensors' bias from one pass, so they share the same rest period."""
+    volts = measure_bias(acquisition, n_samples, poll_interval_s,
+                         ALL_GAUGE_CHANNELS)
+    return volts[:6], volts[6:]
+
+
 class AcquisitionForceSource(ForceSource):
     """Live normal force from SensorAcquisition.latest(), calibrated."""
 
-    def __init__(self, acquisition, calibration: "ForceCalibration",
-                 gauge_names: Sequence[str] = (
-                     "gauge0", "gauge1", "gauge2", "gauge3", "gauge4", "gauge5")):
+    def __init__(self, acquisition, calibration,
+                 gauge_names: Sequence[str] = ALL_GAUGE_CHANNELS):
         self._acquisition = acquisition
         self._calibration = calibration
         self._gauge_names = tuple(gauge_names)

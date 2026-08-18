@@ -9,6 +9,13 @@ Key decisions:
 - Explicit samps_per_chan (buffer_seconds) - the DAQmx default is too small.
 - One AI task for all channels - shares a sample clock, keeps them in sync.
 - Every AO write goes through safety.check_voltage_limit first.
+- terminal_config defaults to DEFAULT (differential on the 6321), matching
+  the rig's existing acquisition code. With one sensor per card the six
+  gauges fit inside the 8-channel differential limit.
+
+One instance drives one card. The rig has three: two reading a force sensor
+each, one carrying the stimulus AO and the amplifier's monitor input. The
+force cards are joined into a single stream by multi_daq.MultiDaqDevice.
 """
 
 import time
@@ -21,15 +28,15 @@ from evexp.hardware.daq_errors import translate_daq_error
 from evexp.hardware.safety import check_voltage_limit
 from evexp.processing.signal import cycles_to_duration_s, generate_sine_wave
 
-# Physical channels for an ATI Nano17's six bridges, wired to ai0..ai5.
-DEFAULT_CHANNEL_MAP = {
-    "gauge0": "ai0",
-    "gauge1": "ai1",
-    "gauge2": "ai2",
-    "gauge3": "ai3",
-    "gauge4": "ai4",
-    "gauge5": "ai5",
-}
+
+def gauge_channel_map(prefix: str, first_ai: int = 0) -> dict:
+    """Six gauges of one sensor -> ai channels, named by which sensor it is."""
+    return {f"{prefix}_gauge{i}": f"ai{first_ai + i}" for i in range(6)}
+
+# One sensor per card, six bridges on ai0..ai5. The channel *names* carry
+# which sensor it is (fs1_/fs2_), so the same physical map serves both
+# cards - see gauge_channel_map() and multi_daq.py.
+DEFAULT_CHANNEL_MAP = gauge_channel_map("fs1")
 
 # AO defaults for the electrovibration carrier.
 
@@ -52,7 +59,7 @@ class NiDaqDevice(DAQDevice, StimulusOutput):
                  channel_map: Optional[dict] = None,
                  voltage_range: Tuple[float, float] = (-10.0, 10.0),
                  buffer_seconds: float = 2.0,
-                 terminal_config: str = "DIFF",
+                 terminal_config: str = "DEFAULT",
                  ao_channel: str = DEFAULT_AO_CHANNEL,
                  stimulus_frequency_hz: float = DEFAULT_STIMULUS_FREQUENCY_HZ,
                  ao_sample_rate_hz: float = DEFAULT_AO_SAMPLE_RATE_HZ,

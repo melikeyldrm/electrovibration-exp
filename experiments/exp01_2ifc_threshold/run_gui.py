@@ -1,6 +1,7 @@
 """Interactive 2IFC threshold session with a real participant."""
 
 import argparse
+import signal
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -12,10 +13,15 @@ from PyQt5.QtWidgets import QApplication
 from evexp.data.csv_logger import CSVTrialLogger
 from evexp.data.raw_csv_writer import RawTrialWriter
 from evexp.hardware.acquisition import SensorAcquisition
-from evexp.hardware.force import AcquisitionForceSource, ForceCalibration, measure_bias
+from evexp.hardware.force import (AcquisitionForceSource, DualForceCalibration,
+                                  measure_dual_bias)
 from evexp.hardware.dev_sources import ManualForceSource, ManualPositionSource, SimulatedForceSource
 from evexp.hardware.mock import MockDAQDevice, MockStimulusOutput
-from evexp.hardware.nidaq import NiDaqDevice
+from evexp.hardware.multi_daq import MultiDaqDevice
+from evexp.hardware.neonode import (HidNeonodeTransport, NeonodeCalibration,
+                                    NeonodeConnectionError,
+                                    NeonodePositionSource)
+from evexp.hardware.nidaq import NiDaqDevice, gauge_channel_map
 from evexp.processing.force_feedback import ForceBands
 from evexp.hardware.screen import ScreenCalibration
 from evexp.psychophysics.staircase import StaircaseConfig, StaircaseController
@@ -57,8 +63,28 @@ def parse_args():
              "the stimulus. Default: mock, no hardware needed."
     )
     parser.add_argument(
-        "--daq-device-name", default="Dev1",
-        help="NI-DAQmx device name, only used with --real-daq."
+        "--daq-fs1", default="Dev1",
+        help="NI-DAQmx device reading force sensor 1. Only with --real-daq."
+    )
+    parser.add_argument(
+        "--daq-fs2", default="Dev2",
+        help="NI-DAQmx device reading force sensor 2. Only with --real-daq."
+    )
+    parser.add_argument(
+        "--daq-stim", default="Dev3",
+        help="NI-DAQmx device carrying the stimulus AO and the amplifier "
+             "monitor input. Only with --real-daq."
+    )
+    parser.add_argument(
+        "--monitor-channel", default="ai0",
+        help="AI channel on the stimulus card reading the amplifier's "
+             "monitor output."
+    )
+    parser.add_argument(
+        "--neonode", action="store_true",
+        help="Track finger position with the Neonode IR sensor instead of "
+             "the mouse. Falls back to the mouse if the sensor cannot be "
+             "opened."
     )
     parser.add_argument(
         "--list-screens", action="store_true",
@@ -137,16 +163,29 @@ def main():
     session_cfg["participant_id"] = participant_id
     print(f"Participant {participant_id}, sliding speed {cue_speed_mm_s:g} mm/s")
 
-    # One NiDaqDevice does double duty as both DAQDevice (sensor acquisition)
-    # and StimulusOutput (AO stimulus) - same physical card, two independent
-    # tasks, see hardware/nidaq.py. Mock mode uses two separate objects
-    # instead since MockDAQDevice/MockStimulusOutput were never combined.
+    # Three cards: one per force sensor, one for the stimulus. The two
+    # force cards are joined into a single channel list so that acquisition
+    # and everything above it still sees one device; the stimulus card is
+    # kept separate because it is doing a different job (AO out, monitor
+    # in), and its AI channel rides along in the same joined stream.
+    #
+    # Each card keeps its own sample clock - see hardware/multi_daq.py for
+    # why that is acceptable here and what would change it.
     if args.real_daq:
-        daq = NiDaqDevice(device_name=args.daq_device_name)
-        acquisition_device = daq
-        stimulus_output = daq
-        print(f"DAQ: NiDaqDevice({args.daq_device_name!r}) - "
-              "real or NI MAX simulated card, for BOTH acquisition and stimulus")
+        stimulus_card = NiDaqDevice(
+            device_name=args.daq_stim,
+            channel_map={"current": args.monitor_channel},
+        )
+        acquisition_device = MultiDaqDevice([
+            NiDaqDevice(device_name=args.daq_fs1,
+                        channel_map=gauge_channel_map("fs1")),
+            NiDaqDevice(device_name=args.daq_fs2,
+                        channel_map=gauge_channel_map("fs2")),
+            stimulus_card,
+        ])
+        stimulus_output = stimulus_card
+        print(f"DAQ: {args.daq_fs1} (FS1) + {args.daq_fs2} (FS2) + "
+              f"{args.daq_stim} (stimulus, monitor on {args.monitor_channel})")
     else:
         acquisition_device = MockDAQDevice(realtime=True)
         stimulus_output = MockStimulusOutput(verbose=False)
@@ -189,9 +228,10 @@ def main():
     )
     print(f"Raw per-trial CSVs -> {raw_writer.participant_dir}")
 
-    # No .cal file yet (see hardware/force.py) - forces are raw volts
-    # wearing a newton label until  Nano17 matrix arrives.
-    force_calibration = ForceCalibration.placeholder()
+    # Two Nano17s under the plate. Matrices are the ones from
+    # Setup_FS1.5.py, not read from these sensors' own .cal files, so the
+    # numbers stay marked placeholder (see hardware/force.py).
+    force_calibration = DualForceCalibration.from_gain_matrices()
 
     snapshot_path = output_path.with_suffix(".yaml")
     write_config_snapshot(cfg, snapshot_path)
@@ -204,11 +244,27 @@ def main():
 
     travel_mm = timing_cfg["cursor_travel_mm"]
 
-    # Finger position. Today this is driven by the mouse over the cue track;
-    # swapping in a NeonodePositionSource here is the only change needed once
-    # the touch sensor works - the UI and speed readout are unaffected.
-    position_source = ManualPositionSource(travel_mm=travel_mm)
-    print("Position source: mouse (move the pointer along the cue track)")
+    # Finger position. The Neonode reports in its own coordinates, so
+    # origin_x has to line the sensor's zero up with the start of the cue
+    # track, and the scale sign has to match the direction of travel -
+    # neither is knowable until the sensor is mounted on the rig.
+    position_source = None
+    if args.neonode:
+        try:
+            position_source = NeonodePositionSource(
+                transport=HidNeonodeTransport(),
+                calibration=NeonodeCalibration(),
+            )
+            position_source.connect()
+            print("Position source: Neonode IR sensor")
+        except NeonodeConnectionError as exc:
+            # Not fatal: a session can still run on the mouse, and failing
+            # here would waste a booked participant slot.
+            print(f"WARNING: Neonode unavailable ({exc}); using the mouse.")
+            position_source = None
+    if position_source is None:
+        position_source = ManualPositionSource(travel_mm=travel_mm)
+        print("Position source: mouse (move the pointer along the cue track)")
 
     # Continuous sensor acquisition, on its own thread. Built before the
     # force source below, not after: the "nano17" force option reads
@@ -226,10 +282,10 @@ def main():
           f"({'real/NI MAX' if args.real_daq else 'simulated'})")
 
     # Bias: once per session, right after acquisition starts, nothing
-    # touching the sensor. 
-    print("Measuring force bias (nothing touching the sensor)...")
-    bias = measure_bias(acquisition, n_samples=100)
-    force_calibration = force_calibration.with_bias(bias)
+    # touching either sensor. Both are averaged over the same rest period.
+    print("Measuring force bias (nothing touching the sensors)...")
+    bias_fs1, bias_fs2 = measure_dual_bias(acquisition, n_samples=100)
+    force_calibration = force_calibration.with_bias(bias_fs1, bias_fs2)
     print(f"Force calibration: {force_calibration.describe()}")
 
     # Force feedback. "nano17" reads the live normal force off the DAQ's
@@ -263,6 +319,8 @@ def main():
     # and the Escape confirmation on the console.
     def shutdown() -> None:
         acquisition.stop()
+        if isinstance(position_source, NeonodePositionSource):
+            position_source.disconnect()
         print(acquisition.stats().describe())
         # AO task is separate from acquisition's AI task and is not closed
         # by acquisition.stop() - close it explicitly if it was left running.
@@ -270,6 +328,14 @@ def main():
             stimulus_output.stimulus_off()
 
     app.aboutToQuit.connect(shutdown)
+
+    # Without this, Ctrl+C is only noticed whenever Python next happens to
+    # run - typically inside _poll_sensors, mid-callback - and the
+    # exception propagates out of Qt's C++ event loop instead of through
+    # app.quit(). That skips aboutToQuit, so shutdown() never runs: the DAQ
+    # cards stay open and the trial in progress is never written. Routing
+    # SIGINT through app.quit() makes Ctrl+C behave like closing the window.
+    signal.signal(signal.SIGINT, lambda *_: app.quit())
 
     participant = ParticipantWindow(
         calibration=calibration,

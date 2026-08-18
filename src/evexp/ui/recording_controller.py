@@ -17,7 +17,7 @@ from typing import Callable, List, NamedTuple, Optional
 import numpy as np
 
 from evexp.hardware.acquisition import SensorAcquisition
-from evexp.hardware.force import ForceCalibration
+from evexp.hardware.force import (ALL_GAUGE_CHANNELS, DualForceCalibration)
 from evexp.data.raw_csv_writer import RawTrialWriter
 from evexp.processing.force_feedback import ForceBands, force_stats_from_samples
 
@@ -42,7 +42,7 @@ class RecordingController:
         self,
         acquisition: Optional[SensorAcquisition],
         raw_writer: Optional[RawTrialWriter],
-        force_calibration: Optional[ForceCalibration],
+        force_calibration: Optional[DualForceCalibration],
         force_bands: Optional[ForceBands] = None,
         log_fn: Callable[[str], None] = print,
     ):
@@ -105,7 +105,9 @@ class RecordingController:
                           "overrun or acquisition not running)")
                 return None
             channels = self._acquisition.channels
-            gauge_indices = [channels.index(f"gauge{i}") for i in range(6)]
+            # Both sensors' gauges, FS1 first - the order DualForceCalibration
+            # expects when it splits the block back into two.
+            gauge_indices = [channels.index(name) for name in ALL_GAUGE_CHANNELS]
             current = (block[channels.index("current"), :]
                        if "current" in channels else None)
             positions = [p for p in self._acquisition.recent_positions()

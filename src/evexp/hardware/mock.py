@@ -16,9 +16,11 @@ import numpy as np
 from evexp.hardware.base import (DAQDevice, SensorChunk, SensorSample,
                                  StimulusOutput)
 
-# Six strain-gauge channels, matching an ATI Nano17 wired into ai0..ai5.
+# Twelve strain-gauge channels: two ATI Nano17s, FS1 on ai0..ai5 and FS2 on
+# ai6..ai11 (see nidaq.DEFAULT_CHANNEL_MAP).
 DEFAULT_GAUGE_CHANNELS: Tuple[str, ...] = (
-    "gauge0", "gauge1", "gauge2", "gauge3", "gauge4", "gauge5",
+    tuple(f"fs1_gauge{i}" for i in range(6))
+    + tuple(f"fs2_gauge{i}" for i in range(6))
 )
 
 

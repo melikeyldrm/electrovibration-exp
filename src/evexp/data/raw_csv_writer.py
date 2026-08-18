@@ -12,7 +12,7 @@ from typing import List, Optional
 
 import numpy as np
 
-from evexp.hardware.force import ForceCalibration
+from evexp.hardware.force import DualForceCalibration
 from evexp.hardware.position import PositionSample
 from evexp.processing.signal import hold_to_grid
 
@@ -40,10 +40,14 @@ class RawTrialWriter:
     Filename: p<participant_id>_s<speed>_trial<index:03d>_<stamp>.csv
     Rows for interval 1 come first, then interval 2. `actuation` is 1 on
     the interval that carried the stimulus, 0 on the other.
+
+    Both sensors are written separately (fx1.. / fx2..) alongside their sum
+    (fx/fy/fz): the sum cannot be taken apart afterwards, and a per-sensor
+    trace is what shows an unbalanced mount or a dead bridge.
     """
 
-    COLUMNS = ("interval,time_s,fx,fy,fz,voltage_v,current_a,"
-               "actuation,speed_mm_s")
+    COLUMNS = ("interval,time_s,fx1,fy1,fz1,fx2,fy2,fz2,fx,fy,fz,"
+               "voltage_v,current_a,actuation,speed_mm_s")
 
     def __init__(self, output_dir, participant_id: str, speed_mm_s: float,
                  stamp: str):
@@ -63,7 +67,7 @@ class RawTrialWriter:
 
     def _interval_rows(
         self, interval_label: int, gauge_chunk: np.ndarray,
-        calibration: ForceCalibration, sample_rate_hz: float, t0: float,
+        calibration: DualForceCalibration, sample_rate_hz: float, t0: float,
         commanded_voltage: float, actuation: int,
         positions: Optional[List[PositionSample]],
         current_chunk: Optional[np.ndarray],
@@ -71,7 +75,8 @@ class RawTrialWriter:
         n = gauge_chunk.shape[1]
         rel_times = np.arange(n) / sample_rate_hz
         abs_times = t0 + rel_times
-        forces = calibration.forces_in_screen_frame(gauge_chunk)  # (3, n)
+        forces1, forces2 = calibration.forces_per_sensor(gauge_chunk)  # (3, n)
+        forces = forces1 + forces2
 
         if positions:
             pos_times, pos_speeds = _speeds_from_positions(positions)
@@ -87,6 +92,8 @@ class RawTrialWriter:
 
         return [
             f"{interval_label},{rel_times[i]:.6f},"
+            f"{forces1[0, i]:.6f},{forces1[1, i]:.6f},{forces1[2, i]:.6f},"
+            f"{forces2[0, i]:.6f},{forces2[1, i]:.6f},{forces2[2, i]:.6f},"
             f"{forces[0, i]:.6f},{forces[1, i]:.6f},{forces[2, i]:.6f},"
             f"{commanded_voltage:.6f},{current[i]:.6f},{actuation},"
             f"{speed[i]:.6f}"
@@ -96,7 +103,7 @@ class RawTrialWriter:
     def write_trial(
         self, trial_index: int,
         gauge1: np.ndarray, gauge2: np.ndarray,
-        calibration: ForceCalibration, sample_rate_hz: float,
+        calibration: DualForceCalibration, sample_rate_hz: float,
         t0_interval1: float, t0_interval2: float,
         voltage_interval1: float, voltage_interval2: float,
         stimulus_interval: int,
@@ -107,15 +114,16 @@ class RawTrialWriter:
     ) -> None:
         """Write both intervals of one trial to a single CSV file.
 
-        gauge1/gauge2: (6, n_samples) raw gauge voltages, already cut from
-            the acquisition ring buffer for each interval's time window.
+        gauge1/gauge2: (12, n_samples) raw gauge voltages - FS1 on rows
+            0-5, FS2 on rows 6-11 - already cut from the acquisition ring
+            buffer for each interval's time window.
         t0_interval1/2: host timestamp of each chunk's first sample, used to
             align positions (which carry their own absolute timestamps).
         """
         for label, chunk in ((1, gauge1), (2, gauge2)):
-            if chunk.ndim != 2 or chunk.shape[0] != 6:
+            if chunk.ndim != 2 or chunk.shape[0] != 12:
                 raise ValueError(
-                    f"interval {label} chunk must be (6, n_samples), "
+                    f"interval {label} chunk must be (12, n_samples), "
                     f"got {chunk.shape}")
 
         rows = [self.COLUMNS]
