@@ -20,8 +20,10 @@ class ManualPositionSource(PositionSource):
     """Position driven by whatever the UI pushes in - currently the mouse.
 
     Written from the Qt thread and read from the acquisition thread, so the
-    stored sample is guarded by a lock held only long enough to swap a
-    reference.
+    stored sample is guarded by a lock (a small gate that only one thread at
+    a time can pass through, used here to stop the two threads from reading
+    and writing `_latest` at the same instant) held only long enough to swap
+    a reference.
     """
 
     def __init__(self, travel_mm: float = 100.0):
@@ -42,6 +44,7 @@ class ManualPositionSource(PositionSource):
             self._latest = None
 
     def read(self) -> Optional[PositionSample]:
+        """Return the most recently pushed sample, or None if no finger is down."""
         with self._lock:
             return self._latest
 
@@ -60,6 +63,9 @@ class SimulatedForceSource(ForceSource):
         self._t0 = time.perf_counter()
 
     def read_normal_force(self) -> Optional[float]:
+        """Return a synthetic force reading: target_n plus a slow sine
+        drift and small random noise, so dev/testing sees something that
+        moves like a real finger contact instead of a flat constant."""
         elapsed = time.perf_counter() - self._t0
         drift = self.drift_n * math.sin(2 * math.pi * elapsed / self.drift_period_s)
         return self.target_n + drift + self._rng.gauss(0.0, self.noise_n)
@@ -73,13 +79,16 @@ class ManualForceSource(ForceSource):
         self._value = initial_n
 
     def push(self, force_n: float) -> None:
+        """Called by the UI to set the current force value (e.g. from pointer Y)."""
         with self._lock:
             self._value = float(force_n)
 
     def clear(self) -> None:
+        """Called when contact is lost: no force reading available."""
         with self._lock:
             self._value = None
 
     def read_normal_force(self) -> Optional[float]:
+        """Return the most recently pushed force, or None if not in contact."""
         with self._lock:
             return self._value

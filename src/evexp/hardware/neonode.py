@@ -1,9 +1,10 @@
 """Neonode NNAMC1580PCEV IR position sensor - PositionSource implementation.
 
-The sensor exposes two HID interfaces. The digitizer one carries standard
-touch reports but Windows reserves it as a system pointing device and will
-not let a program read it. The vendor one (usage page 0xFF00) carries the
-zForce protocol and is what this uses.
+The sensor exposes two HID (Human Interface Device - the standard USB
+protocol used by keyboards, mice and touch panels) interfaces. The
+digitizer one carries standard touch reports but Windows reserves it as a
+system pointing device and will not let a program read it. The vendor one
+(usage page 0xFF00) carries the zForce protocol and is what this uses.
 
 That interface is a feature-report pipe rather than a stream: the host
 writes to Feature Report 1 and reads from Feature Report 2, and the sensor
@@ -242,11 +243,13 @@ def _decode_report(report: bytes) -> Optional[Tuple[float, float]]:
 def _parse_touches(report: bytes) -> List[Tuple[int, int, int, int]]:
     """Every touch in a notification, as (id, event, x_raw, y_raw).
 
-    Each touch is a TLV: tag 0x42, a length, then id, event, x, y and
-    sizes. Scanning for the tag rather than indexing from a fixed offset
-    keeps this working whether the frame carries one touch or three, and
-    with or without the trailing timestamp - both of which vary with the
-    number of fingers and the firmware version.
+    Each touch is a TLV (tag-length-value: a small self-describing chunk of
+    binary data - a tag byte says what it is, a length byte says how many
+    bytes follow, then the actual value): tag 0x42, a length, then id,
+    event, x, y and sizes. Scanning for the tag rather than indexing from a
+    fixed offset keeps this working whether the frame carries one touch or
+    three, and with or without the trailing timestamp - both of which vary
+    with the number of fingers and the firmware version.
     """
     if not report or report[0] != NOTIFICATION_FRAME:
         return []

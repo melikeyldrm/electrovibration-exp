@@ -1,3 +1,12 @@
+"""Writes a finished staircase session's trial results to a single HDF5 file.
+
+HDF5 (a binary file format for storing large, labelled numeric datasets,
+organized like folders and files inside one archive) groups related data
+under named subfolders ("electrical", "psychophysical", ...) with session
+metadata as attributes, so a session can be reloaded and filtered by
+category without parsing a flat table.
+"""
+
 from pathlib import Path
 from typing import List
 
@@ -27,6 +36,11 @@ class HDF5TrialWriter:
         session_meta: dict,
         threshold_estimate: float,
     ) -> None:
+        """Write all trial results plus session metadata to one HDF5 file.
+
+        Overwrites any existing file at output_path. Does nothing if
+        results is empty (no file is created).
+        """
         if not results:
             return
 

@@ -1,4 +1,6 @@
-"""Two-interval forced-choice (2IFC) trial sequencing.
+"""Two-interval forced-choice (2IFC - the participant feels two intervals
+and says which one had the stimulus, rather than just yes/no) trial
+sequencing.
 
 Trial structure follows Vardar & Kuchenbecker (2021): two temporal intervals
 of equal duration separated by a silent gap, exactly one of which carries the

@@ -312,6 +312,11 @@ class ParticipantWindow(QWidget):
 
     COUNTDOWN_TICK_MS = 100
 
+    # Qt signals (a typed event this widget can emit; other code "connects"
+    # a function to it and gets called when it fires) - this is how the
+    # window tells the rest of the app "space was pressed" or "the
+    # participant answered 1/2" without those callers needing to know about
+    # key codes.
     startRequested = pyqtSignal()
     responseGiven = pyqtSignal(int)
 

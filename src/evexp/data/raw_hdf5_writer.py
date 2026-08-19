@@ -67,7 +67,9 @@ class RawSessionWriter:
             position source produces (Neonode: up to 200 Hz). Speed is
             derived from consecutive samples and held to gauge_chunk's
             sample grid, per Umut: "aynı değeri bir süre boyunca tekrar
-            yazabilirsin".
+            yazabilirsin" ("you can keep re-writing the same value for a
+            while") - i.e. it is fine to repeat the last known speed until
+            a new position sample arrives, rather than leaving gaps.
         """
         if gauge_chunk.ndim != 2 or gauge_chunk.shape[0] != 6:
             raise ValueError(

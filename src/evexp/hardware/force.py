@@ -43,7 +43,7 @@ GAIN_FS2 = [
 # a mounting rotation rather than a sign buried in the summing code, so the
 # frame convention lives in one place. Replace with the measured mounting
 # rotation once the sensor orientation relative to the screen is known.
-FLIP_Y = np.diag([1.0, -1.0, 1.0])
+FLIP_Y = np.diag([1.0, -1.0, 1.0]) # validate !!!
 
 
 @dataclass(frozen=True)
@@ -139,6 +139,8 @@ class DualForceCalibration:
                 mounting=np.asarray(mounting, dtype=float),
                 serial=serial, is_placeholder=is_placeholder,
             )
+        # Builds two ForceCalibration objects from the gain matrices and 
+        # wraps them in one DualForceCalibration
         return cls(fs1=one(gain_fs1, "FS1"), fs2=one(gain_fs2, "FS2"))
 
     @classmethod

@@ -44,6 +44,11 @@ _STROKING_STATES = (TrialState.INTERVAL_1, TrialState.INTERVAL_2)
 
 
 class SessionController(QObject):
+    """Runs a full session: drives Trial2IFC, updates both windows, and logs
+    each trial's result. This is the object that ties the trial state
+    machine, the participant/experimenter windows, sensor polling, and
+    optional raw recording together into one running experiment."""
+
     def __init__(
         self,
         trial: Trial2IFC,

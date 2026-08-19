@@ -204,6 +204,10 @@ class ConvergencePlot(QWidget):
 
 
 class ExperimenterWindow(QWidget):
+    """The console window: status cards, live staircase plot, and a trial
+    log table, updated as the session runs (see update_status, add_result,
+    update_speed)."""
+
     COLUMNS = ["Trial", "Voltage (V)", "Stim", "Resp",
                "Correct", "Reversal", "RT (s)"]
 

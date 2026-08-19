@@ -1,7 +1,13 @@
 """NI-DAQmx implementation of DAQDevice + StimulusOutput.
 
-AI (sensors) and AO (stimulus) are two independent tasks, own sample
-clocks - not combined, so one doesn't block the other.
+This is the "real hardware" backend: it talks to an actual National
+Instruments DAQ (data acquisition) card through the nidaqmx driver library,
+as opposed to mock.py's simulated stand-in used for development without a
+card attached.
+
+AI (analog input - reading sensor voltages) and AO (analog output - driving
+the stimulus voltage) are two independent tasks, each with its own sample
+clock, not combined, so one doesn't block the other.
 
 Key decisions:
 - read_many_sample() into a preallocated buffer, not Task.read() per
@@ -38,10 +44,12 @@ def gauge_channel_map(prefix: str, first_ai: int = 0) -> dict:
 # cards - see gauge_channel_map() and multi_daq.py.
 DEFAULT_CHANNEL_MAP = gauge_channel_map("fs1")
 
-# AO defaults for the electrovibration carrier.
+# AO (analog output - the DAQ card's outgoing signal path, here driving the
+# stimulus waveform) defaults for the electrovibration carrier.
 
 # 200 kHz sample rate: 1600 samples/cycle, within PCIe-6321's AO limit.
-# 5 cycles/buffer: was 1000 (8s, 1.6M samples) -
+# 5 cycles/buffer: previously 1000 cycles/buffer (8 s, 1.6M samples), which
+# was cut down to keep the buffer small and amplitude changes responsive.
 DEFAULT_AO_CHANNEL = "ao0"
 DEFAULT_STIMULUS_FREQUENCY_HZ = 125.0
 DEFAULT_AO_SAMPLE_RATE_HZ = 200_000.0

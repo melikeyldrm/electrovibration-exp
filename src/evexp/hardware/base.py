@@ -5,7 +5,8 @@ every 100 us, and Python cannot service a call that often - the per-call
 overhead alone exceeds the sample interval, the driver's buffer fills, and
 the acquisition fails with an overflow. Reading in blocks of a few hundred
 samples moves the loop rate down to something Python is comfortable with
-while the card's own DMA keeps the timing exact.
+while the card's own DMA (direct memory access - the card writes samples
+straight into memory without waiting on the CPU) keeps the timing exact.
 
 The single-sample read() is kept as a convenience for code that only wants a
 current value, but it is a thin wrapper over the block read and is not the
@@ -42,6 +43,10 @@ class SensorSample:
 @dataclass(frozen=True)
 class SensorChunk:
     """A block of consecutive samples across every channel.
+
+    This is the basic unit of data that moves through the acquisition
+    pipeline: instead of handling one sample at a time, the code reads,
+    stores, and analyzes many samples together as a single chunk.
 
     Stored channels-first, matching what the NI-DAQmx readers produce, so
     that no transpose or copy is needed on the acquisition path.
@@ -103,8 +108,9 @@ class SensorChunk:
             ) from None
 
     def latest(self) -> SensorSample:
-        """The final sample of the block, as a per-channel mapping. """
-        # to use at gui 
+        """The final sample of the block, as a per-channel mapping."""
+        # Used by the GUI, which only needs to display the most recent
+        # reading rather than the whole chunk.
         return SensorSample(
             timestamp=self.t_end,
             values={name: float(self.data[i, -1])

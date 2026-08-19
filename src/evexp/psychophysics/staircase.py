@@ -1,3 +1,15 @@
+"""Adaptive staircase procedure for estimating a perceptual threshold.
+
+A staircase (a rule for picking the next stimulus intensity from the
+participant's past answers) gets weaker after enough correct answers and
+stronger after a wrong one, so it converges on the threshold instead of
+sampling stimulus levels at random - far fewer trials are needed this way.
+
+A "reversal" is a change of direction (down then up, or up then down).
+Reversal points cluster near the threshold, so their average is used as
+the threshold estimate.
+"""
+
 import math
 from dataclasses import dataclass
 from typing import List, Literal
@@ -13,8 +25,15 @@ class StaircaseConfig:
     rule: Literal["1up2down", "3down1up"] = "1up2down"
     min_value: float = 0.0
     max_value: float = 1e9
-    max_consecutive_wrong_at_ceiling: int = 5  # Session aborts if this many consecutive wrong answers occur at max_value.
-                                                # Set to 0 to disable. Literature (Vardar & Kuchenbecker 2021) uses 3;
+    # Abort the session after this many consecutive wrong answers at
+    # max_value: the participant can't detect it even at the ceiling, so
+    # continuing wastes their time. 0 disables. Vardar & Kuchenbecker 2021
+    # use 3.
+    max_consecutive_wrong_at_ceiling: int = 5
+    # "linear": steps add/subtract directly from the value. "db": steps are
+    # applied in the dB domain (log scale, 20*log10(voltage)) then converted
+    # back, since equal dB steps feel like equal intensity steps, unlike
+    # equal linear voltage steps.
     domain: Literal["linear", "db"] = "linear"
     # If True (default), the correct-answer streak resets to 0 on any wrong
     # answer, i.e. the required correct answers must be consecutive.
@@ -23,7 +42,9 @@ class StaircaseConfig:
     # consecutive" wording in Vuik/Pool/Kenanoglu/Vardar 2024/2025.
     consecutive_required: bool = True
 
-    # which 5 reversal ?
+    # When True, the first (len(step_sizes) - 1) reversals are a coarse-stage
+    # warm-up: they still shrink the step size but don't count toward
+    # n_reversals_to_stop or the threshold average. See total_reversals_needed.
     require_fine_stage_reversals: bool = False
 
     def __post_init__(self):
@@ -46,7 +67,14 @@ def from_db(value_db: float) -> float:
 
 class StaircaseController:
     """Adaptive staircase controller supporting 1-up/2-down and 3-down/1-up rules,
-    in either linear or dB step domain."""
+    in either linear or dB step domain.
+
+    "1up2down" steps down after 2 consecutive correct answers, up after any
+    wrong one, and converges near 70.7% correct. "3down1up" needs 3
+    consecutive correct answers and converges near 79.4% correct. Call
+    update() once per trial with whether the response was correct; it
+    returns the stimulus value for the next trial.
+    """
 
     def __init__(self, config: StaircaseConfig):
         self.cfg = config
@@ -78,7 +106,10 @@ class StaircaseController:
         return min(self.cfg.max_value, max(self.cfg.min_value, new_value))
 
     def update(self, correct: bool) -> float:
-        """Update the staircase and return the next stimulus value."""
+        """Score one trial's response and return the stimulus value for the
+        next trial. Steps the value up/down, records a reversal on a
+        direction change, and marks the staircase finished once enough
+        reversals have accumulated (see total_reversals_needed)."""
 
         if self.finished:
             return self.value

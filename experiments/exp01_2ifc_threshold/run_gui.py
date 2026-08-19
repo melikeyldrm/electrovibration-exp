@@ -172,9 +172,14 @@ def main():
     # Each card keeps its own sample clock - see hardware/multi_daq.py for
     # why that is acceptable here and what would change it.
     if args.real_daq:
+        # ao_voltage_limit_v drives both the safety.check_voltage_limit()
+        # check and the AO channel's own hardware range (see nidaq.py) - tied
+        # to the staircase's max_value so there is one ceiling to edit, not
+        # two numbers that happen to agree until someone changes only one.
         stimulus_card = NiDaqDevice(
             device_name=args.daq_stim,
             channel_map={"current": args.monitor_channel},
+            ao_voltage_limit_v=cfg["staircase"]["max_value"],
         )
         acquisition_device = MultiDaqDevice([
             NiDaqDevice(device_name=args.daq_fs1,

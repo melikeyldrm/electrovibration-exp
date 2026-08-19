@@ -1,3 +1,10 @@
+"""Per-trial CSV logging, as an alternative to the end-of-session HDF5 file.
+
+Written incrementally (one row appended per trial) rather than all at once,
+so progress survives if the session is interrupted. See hdf5_writer.py for
+the richer, all-at-once format written at the end of a session.
+"""
+
 import csv
 from dataclasses import asdict, fields
 from pathlib import Path
@@ -31,6 +38,12 @@ class CSVTrialLogger:
             self.log(result)
 
 class MinimalCSVTrialLogger:
+    """Bare-bones CSV logger: trial number, voltage and correctness only.
+
+    For a quick look at how a session is progressing without the full set
+    of TrialResult fields that CSVTrialLogger writes.
+    """
+
     FIELDNAMES = ["trial_no", "applied_voltage", "correct"]
 
     def __init__(self, output_path: str):
