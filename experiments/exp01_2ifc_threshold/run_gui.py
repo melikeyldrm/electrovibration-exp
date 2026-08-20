@@ -253,21 +253,19 @@ def main():
     # origin_x has to line the sensor's zero up with the start of the cue
     # track, and the scale sign has to match the direction of travel -
     # neither is knowable until the sensor is mounted on the rig.
-    position_source = None
     if args.neonode:
+       
+        position_source = NeonodePositionSource(
+            transport=HidNeonodeTransport(),
+            calibration=NeonodeCalibration(),
+        )
         try:
-            position_source = NeonodePositionSource(
-                transport=HidNeonodeTransport(),
-                calibration=NeonodeCalibration(),
-            )
             position_source.connect()
-            print("Position source: Neonode IR sensor")
         except NeonodeConnectionError as exc:
-            # Not fatal: a session can still run on the mouse, and failing
-            # here would waste a booked participant slot.
-            print(f"WARNING: Neonode unavailable ({exc}); using the mouse.")
-            position_source = None
-    if position_source is None:
+            sys.exit(f"Neonode unavailable ({exc}); aborting - rerun without "
+                      "--neonode to develop on the mouse instead.")
+        print("Position source: Neonode IR sensor")
+    else:
         position_source = ManualPositionSource(travel_mm=travel_mm)
         print("Position source: mouse (move the pointer along the cue track)")
 

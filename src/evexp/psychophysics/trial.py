@@ -2,12 +2,8 @@
 and says which one had the stimulus, rather than just yes/no) trial
 sequencing.
 
-Trial structure follows Vardar & Kuchenbecker (2021): two temporal intervals
-of equal duration separated by a silent gap, exactly one of which carries the
-electrovibration stimulus. The participant reports which interval contained it.
 
-Each interval is preceded by a "place your finger" wait phase (PRE_INTERVAL_WAIT),
-per protocol supplied by Umut.
+Each interval is preceded by a "place your finger" wait phase (PRE_INTERVAL_WAIT).
 """
 
 import math
@@ -42,7 +38,7 @@ class TrialTiming:
     duration varies with speed condition rather than the two ever
     disagreeing.
     """
-    pre_interval_wait_s: float = 3.0  # "place your finger", before each interval
+    pre_interval_wait_s: float = 3.0  
     gap_s: float = 2.0
     cursor_speed_mm_s: float = 50.0
     cursor_travel_mm: float = 100.0
@@ -158,7 +154,7 @@ class Trial2IFC:
 
         self.state = TrialState.PRE_INTERVAL_WAIT
         self._pending_interval = 1
-        return self.timing.pre_interval_wait_s
+        return self.timing.pre_interval_wait_s # caller waits this long, then calls advance()
 
     def advance(self) -> Optional[float]:
         """Move to the next phase when the current phase's timer expires.
