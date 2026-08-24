@@ -89,7 +89,11 @@ timing:
   # "Place your finger" wait screen, shown before EACH interval (both red and
   # green), not just once per trial.
   pre_interval_wait_s: 3.0
-  gap_s: 2.0
+  # Gap between interval 1 and interval 2. Left empty, it scales with speed
+  # the same way interval_s does (cursor_travel_mm / cursor_speed_mm_s) -
+  # mirrors how long a real stage would take to return. Set a number here to
+  # pin it back to a fixed gap regardless of speed condition.
+  gap_s_override:
   # Track is now a single one-way sweep (not out-and-back), so interval_s is
   # no longer set here - it is derived as cursor_travel_mm / cursor_speed_mm_s
   # (see TrialTiming.interval_s in psychophysics/trial.py) and is therefore
@@ -126,7 +130,7 @@ force:
   # still reports raw volts wearing a newton label until Umut's real .cal
   # file replaces ForceCalibration.placeholder() a few lines above this in
   # run_gui.py.
-  source: mouse_y #nano17
+  source: simulated #nano17 or mouse_y
 
 acquisition:
   # Continuous sensor acquisition. 10 kHz is comfortable for this setup: the

@@ -202,7 +202,7 @@ def main():
         staircase=staircase,
         timing=TrialTiming(
             pre_interval_wait_s=timing_cfg["pre_interval_wait_s"],
-            gap_s=timing_cfg["gap_s"],
+            gap_s_override=timing_cfg.get("gap_s_override"),
             cursor_speed_mm_s=timing_cfg["cursor_speed_mm_s"],
             cursor_travel_mm=timing_cfg["cursor_travel_mm"],
         ),

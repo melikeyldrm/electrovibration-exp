@@ -37,9 +37,14 @@ class TrialTiming:
     independent - it's derived from travel/speed instead, so stimulus
     duration varies with speed condition rather than the two ever
     disagreeing.
+
+    gap_s_override is None by default, which makes gap_s scale with speed
+    the same way interval_s does (matching the time a real stage would take
+    to return). Set it in config to pin gap_s back to a fixed value instead -
+    no code change needed, only that value.
     """
-    pre_interval_wait_s: float = 3.0  
-    gap_s: float = 2.0
+    pre_interval_wait_s: float = 3.0
+    gap_s_override: Optional[float] = None
     cursor_speed_mm_s: float = 50.0
     cursor_travel_mm: float = 100.0
 
@@ -56,6 +61,13 @@ class TrialTiming:
     @property
     def interval_s(self) -> float:
         """Interval duration: exactly one one-way sweep across the track."""
+        return self.cursor_travel_mm / self.cursor_speed_mm_s
+
+    @property
+    def gap_s(self) -> float:
+        """Inter-interval gap: overridden value, else same as interval_s."""
+        if self.gap_s_override is not None:
+            return self.gap_s_override
         return self.cursor_travel_mm / self.cursor_speed_mm_s
 
 
