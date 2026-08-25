@@ -1,13 +1,4 @@
 """Adaptive staircase procedure for estimating a perceptual threshold.
-
-A staircase (a rule for picking the next stimulus intensity from the
-participant's past answers) gets weaker after enough correct answers and
-stronger after a wrong one, so it converges on the threshold instead of
-sampling stimulus levels at random - far fewer trials are needed this way.
-
-A "reversal" is a change of direction (down then up, or up then down).
-Reversal points cluster near the threshold, so their average is used as
-the threshold estimate.
 """
 
 import math
@@ -31,9 +22,7 @@ class StaircaseConfig:
     # use 3.
     max_consecutive_wrong_at_ceiling: int = 5
     # "linear": steps add/subtract directly from the value. "db": steps are
-    # applied in the dB domain (log scale, 20*log10(voltage)) then converted
-    # back, since equal dB steps feel like equal intensity steps, unlike
-    # equal linear voltage steps.
+    # applied in the dB domain (log scale, 20*log10(voltage)) then converted back
     domain: Literal["linear", "db"] = "linear"
     # If True (default), the correct-answer streak resets to 0 on any wrong
     # answer, i.e. the required correct answers must be consecutive.
@@ -66,13 +55,9 @@ def from_db(value_db: float) -> float:
 
 
 class StaircaseController:
-    """Adaptive staircase controller supporting 1-up/2-down and 3-down/1-up rules,
+    """Adaptive staircase controller supporting 1-up/2-down(~70.7%) and 3-down/1-up (~79.4%) rules,
     in either linear or dB step domain.
-
-    "1up2down" steps down after 2 consecutive correct answers, up after any
-    wrong one, and converges near 70.7% correct. "3down1up" needs 3
-    consecutive correct answers and converges near 79.4% correct. Call
-    update() once per trial with whether the response was correct; it
+    Call update() once per trial with whether the response was correct; it
     returns the stimulus value for the next trial.
     """
 

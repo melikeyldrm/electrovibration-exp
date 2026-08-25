@@ -1,15 +1,10 @@
 """Hardware interfaces: acquisition in, actuation out.
 
-Acquisition is block-oriented. A sensor sampled at 10 kHz produces a sample
-every 100 us, and Python cannot service a call that often - the per-call
-overhead alone exceeds the sample interval, the driver's buffer fills, and
-the acquisition fails with an overflow. Reading in blocks of a few hundred
-samples moves the loop rate down to something Python is comfortable with
-while the card's own DMA (direct memory access - the card writes samples
-straight into memory without waiting on the CPU) keeps the timing exact.
+Acquisition is block-oriented: at 10 kHz, Python can't service a call every
+100 us without overflowing the driver's buffer, so reads happen in blocks
+of a few hundred samples while the card's own DMA keeps timing exact.
 
-The single-sample read() is kept as a convenience for code that only wants a
-current value, but it is a thin wrapper over the block read and is not the
+read() is a single-sample convenience wrapper over the block read, not the
 path a real session should take.
 """
 

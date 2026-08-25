@@ -2,8 +2,6 @@
 and says which one had the stimulus, rather than just yes/no) trial
 sequencing.
 
-
-Each interval is preceded by a "place your finger" wait phase (PRE_INTERVAL_WAIT).
 """
 
 import math
@@ -32,16 +30,10 @@ class TrialState(Enum):
 class TrialTiming:
     """Timing and pacing parameters shared by every trial in a session.
 
-    interval_s is deliberately not a settable field: the track is a single
-    one-way sweep, so interval duration and sliding speed are not
-    independent - it's derived from travel/speed instead, so stimulus
-    duration varies with speed condition rather than the two ever
-    disagreeing.
-
-    gap_s_override is None by default, which makes gap_s scale with speed
-    the same way interval_s does (matching the time a real stage would take
-    to return). Set it in config to pin gap_s back to a fixed value instead -
-    no code change needed, only that value.
+    interval_s isn't a settable field - it's derived from travel/speed, so
+    it always matches the speed condition. gap_s_override is None by
+    default, so gap_s scales with speed the same way; set it to pin gap_s
+    to a fixed value instead.
     """
     pre_interval_wait_s: float = 3.0
     gap_s_override: Optional[float] = None

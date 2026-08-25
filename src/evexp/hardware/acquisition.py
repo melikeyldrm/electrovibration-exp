@@ -1,13 +1,11 @@
 """Continuous acquisition on a worker thread.
 
-The Qt event loop must never block, so a device read at 10 kHz happens on
-its own thread; the worker writes the ring buffer and a snapshot, and the
-Qt timer (~30 Hz) only ever reads that snapshot under a lock. Nothing but
-plain data crosses the lock - the worker must never touch a Qt object.
+10 kHz device reads run on their own thread so the Qt event loop never
+blocks; the worker writes a ring buffer and a snapshot, and the Qt timer
+(~30 Hz) only reads that snapshot under a lock - no Qt objects cross it.
 
-The position source is also sampled here, once per block, so it lands on
-the same clock as the force channels and a trial's force/speed can later be
-cut from the same time window without interpolation.
+Position is also sampled here, once per block, so it shares a clock with
+the force channels and can later be cut from the same time window.
 """
 
 import threading

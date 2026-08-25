@@ -37,14 +37,9 @@ CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "experiment.yaml"
 def write_config_snapshot(cfg: dict, path: Path) -> None:
     """Record the configuration this session actually ran with.
 
-    Deliberately a dump of the in-memory config rather than a copy of the
-    file: choices made at runtime - the speed condition in particular - are
-    not in the file, and a snapshot that disagrees with the session it
-    documents is worse than no snapshot, because it will be believed.
-
-    The cost is that the comments in experiment.yaml are not carried over.
-    The snapshot exists for reproducibility, not for explanation, and the
-    commented file stays in version control.
+    Dumps the in-memory config, not the file, so runtime choices (e.g.
+    speed condition) are included. Comments from experiment.yaml are lost,
+    but that file stays in version control for reference.
     """
     header = (
         "# Effective configuration for this session, including choices made\n"
@@ -156,21 +151,15 @@ def main():
 
     participant_id = setup.participant_id
     cue_speed_mm_s = setup.target_speed_mm_s
-    # Fold the runtime choice back into the config so that everything
-    # downstream - trial timing, the console readout, the snapshot - reads
-    # the same single value.
+   
     timing_cfg["cursor_speed_mm_s"] = cue_speed_mm_s
     session_cfg["participant_id"] = participant_id
     print(f"Participant {participant_id}, sliding speed {cue_speed_mm_s:g} mm/s")
 
-    # Three cards: one per force sensor, one for the stimulus. The two
-    # force cards are joined into a single channel list so that acquisition
-    # and everything above it still sees one device; the stimulus card is
-    # kept separate because it is doing a different job (AO out, monitor
-    # in), and its AI channel rides along in the same joined stream.
-    #
-    # Each card keeps its own sample clock - see hardware/multi_daq.py for
-    # why that is acceptable here and what would change it.
+    # Three cards: two force sensors joined into one channel list (so
+    # acquisition sees a single device), plus the stimulus card, whose AI
+    # channel rides along in the same stream. Each card has its own clock
+    # - see hardware/multi_daq.py.
     if args.real_daq:
         # ao_voltage_limit_v drives both the safety.check_voltage_limit()
         # check and the AO channel's own hardware range (see nidaq.py) - tied
@@ -213,9 +202,7 @@ def main():
 
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # Everything for this participant lives in one folder; filenames are
-    # built from participant id, speed condition and trial number, with one
-    # session stamp shared by every file from the same run.
+    # One folder per participant; filenames share a session stamp per run.
     participant_dir = Path(session_cfg["output_dir"]) / f"p{participant_id}"
     participant_dir.mkdir(parents=True, exist_ok=True)
     output_path = participant_dir / (
@@ -233,9 +220,7 @@ def main():
     )
     print(f"Raw per-trial CSVs -> {raw_writer.participant_dir}")
 
-    # Two Nano17s under the plate. Matrices are the ones from
-    # Setup_FS1.5.py, not read from these sensors' own .cal files, so the
-    # numbers stay marked placeholder (see hardware/force.py).
+    # Two Nano17s under the plate. 
     force_calibration = DualForceCalibration.from_gain_matrices()
 
     snapshot_path = output_path.with_suffix(".yaml")
@@ -249,10 +234,8 @@ def main():
 
     travel_mm = timing_cfg["cursor_travel_mm"]
 
-    # Finger position. The Neonode reports in its own coordinates, so
-    # origin_x has to line the sensor's zero up with the start of the cue
-    # track, and the scale sign has to match the direction of travel -
-    # neither is knowable until the sensor is mounted on the rig.
+    # origin_x/scale sign depend on physical sensor mounting, set after rig setup. e.g. calibration=NeonodeCalibration(origin_x=123.0, mm_per_unit_x=-0.1),
+
     if args.neonode:
        
         position_source = NeonodePositionSource(
@@ -269,9 +252,7 @@ def main():
         position_source = ManualPositionSource(travel_mm=travel_mm)
         print("Position source: mouse (move the pointer along the cue track)")
 
-    # Continuous sensor acquisition, on its own thread. Built before the
-    # force source below, not after: the "nano17" force option reads
-    # acquisition.latest(), so acquisition has to exist first.
+    # Must exist before the force source below: "nano17" reads acquisition.latest().
     acq_cfg = cfg["acquisition"]
     acquisition = SensorAcquisition(
         device=acquisition_device,
@@ -291,12 +272,8 @@ def main():
     force_calibration = force_calibration.with_bias(bias_fs1, bias_fs2)
     print(f"Force calibration: {force_calibration.describe()}")
 
-    # Force feedback. "nano17" reads the live normal force off the DAQ's
-    # most recent sample via acquisition.latest() (see
-    # hardware.force.AcquisitionForceSource) - the actual 10 kHz sampling
-    # happens in the acquisition thread above, this just polls the freshest
-    # value at whatever rate the UI timer asks. "mouse_y" and "simulated"
-    # remain for developing without any DAQ channels wired up at all.
+    # Force feedback. "nano17" polls the DAQ's latest sample via
+    # acquisition.latest(); "mouse_y"/"simulated" are for dev without hardware.
     force_cfg = cfg["force"]
     force_bands = ForceBands(
         target_n=force_cfg["target_n"],
@@ -317,9 +294,7 @@ def main():
         )
     print(f"Force source: {force_source_kind}")
 
-    # Stopping from aboutToQuit rather than after app.exec_() so that the
-    # worker is joined on every exit path, including the window being closed
-    # and the Escape confirmation on the console.
+    # aboutToQuit fires on every exit path, so cleanup always runs there.
     def shutdown() -> None:
         acquisition.stop()
         if isinstance(position_source, NeonodePositionSource):
@@ -332,12 +307,8 @@ def main():
 
     app.aboutToQuit.connect(shutdown)
 
-    # Without this, Ctrl+C is only noticed whenever Python next happens to
-    # run - typically inside _poll_sensors, mid-callback - and the
-    # exception propagates out of Qt's C++ event loop instead of through
-    # app.quit(). That skips aboutToQuit, so shutdown() never runs: the DAQ
-    # cards stay open and the trial in progress is never written. Routing
-    # SIGINT through app.quit() makes Ctrl+C behave like closing the window.
+    # Routes Ctrl+C through app.quit() so aboutToQuit (and shutdown) still runs,
+    # instead of the exception escaping Qt's event loop and skipping cleanup.
     signal.signal(signal.SIGINT, lambda *_: app.quit())
 
     participant = ParticipantWindow(
