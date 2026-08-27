@@ -20,9 +20,8 @@ TEXT_EMPHASIS = "#f4f4f6"     # countdown and interval numerals
 CURSOR = "#7fb8d4"            # desaturated blue; calm, clearly non-signalling
 
 # The participant's own tracked position (square). Its fill communicates
-# applied force (see FORCE_* below); TRACK and START_MARKER stay fixed.
+# applied force (see FORCE_* below); TRACK stays fixed.
 TRACK = "#3a3a40"             # the 100 mm travel path
-START_MARKER = "#5c5c66"      # notch at the start of the track
 
 # --- Force feedback ----------------------------------------------------
 # The square's fill encodes how the participant's applied force compares to
@@ -59,7 +58,6 @@ FONT_SIZE_BODY = 22           # hints and instructions
 CURSOR_RADIUS_PX = 36         # circle: 72 px across
 MARKER_SIZE_PX = 46           # square side; comfortably inside the circle
 TRACK_HEIGHT_PX = 8
-START_MARKER_HEIGHT_PX = 34   # vertical notch marking the start position
 
 # Fixed heights keep the track from drifting up and down as text changes
 # length. The participant physically touches the screen, so the track must

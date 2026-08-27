@@ -129,6 +129,43 @@ def test_invalid_response_raises():
         trial.submit_response(3)  # sadece 1 veya 2 gecerli
 
 
+def test_invalid_trial_does_not_update_staircase():
+    trial = make_trial()
+    voltage_before = trial.staircase.value
+    reversals_before = len(trial.staircase.reversals)
+
+    trial.start_trial()
+    advance_to_awaiting_response(trial)
+    result = trial.submit_response(trial.stimulus_interval, valid=False)
+
+    assert result.valid is False
+    assert result.reversal is False
+    assert trial.staircase.value == voltage_before
+    assert len(trial.staircase.reversals) == reversals_before
+    assert trial.trial_index == 0  # index artmamali
+
+
+def test_invalid_trial_returns_to_ready_not_finished():
+    trial = make_trial()
+    trial.start_trial()
+    advance_to_awaiting_response(trial)
+    trial.submit_response(trial.stimulus_interval, valid=False)
+    assert trial.state is TrialState.READY
+
+
+def test_invalid_trial_is_retried_at_the_same_stimulus_level():
+    """Since staircase.value is unchanged, the next start_trial() naturally
+    re-presents the same voltage - no separate retry mechanism needed."""
+    trial = make_trial()
+    trial.start_trial()
+    advance_to_awaiting_response(trial)
+    voltage_of_discarded_trial = trial.applied_voltage
+    trial.submit_response(trial.stimulus_interval, valid=False)
+
+    trial.start_trial()
+    assert trial.applied_voltage == voltage_of_discarded_trial
+
+
 def test_pre_interval_wait_appears_before_each_interval():
     """PRE_INTERVAL_WAIT must occur exactly twice: before interval 1 and before interval 2."""
     staircase = StaircaseController(StaircaseConfig(

@@ -49,6 +49,11 @@ class CueTrack(QWidget):
     at cue_speed_mm_s until the far end, at which point the interval ends
     (TrialTiming.interval_s = travel_mm / cue_speed_mm_s). No return leg.
 
+    Before the sweep starts (show_track_only(), the pre-interval countdown),
+    the circle stays fixed at the start point instead of disappearing - a
+    stationary target the participant aligns their fingertip to before the
+    interval begins.
+
     Position and force are both fed externally - today from the mouse and a
     simulated/manual source; nothing here changes once the Neonode and
     Nano17 are wired up.
@@ -253,25 +258,19 @@ class CueTrack(QWidget):
                             Qt.SolidLine, Qt.RoundCap))
         painter.drawLine(int(x0), int(y), int(x1), int(y))
 
-        # Start marker: a vertical notch, so "place your finger at the start"
-        # refers to a specific visible point rather than a vague region. Every
-        # stroke then begins from the same physical spot.
-        half_notch = theme.START_MARKER_HEIGHT_PX / 2.0
-        painter.setPen(QPen(QColor(theme.START_MARKER), 3,
-                            Qt.SolidLine, Qt.RoundCap))
-        painter.drawLine(int(x0), int(y - half_notch),
-                         int(x0), int(y + half_notch))
-
-        # Pacing cue (circle) - only while an interval is running. Drawn
-        # before the participant's marker so that the marker stays visible
-        # when the two overlap, which is exactly when the participant is on
-        # pace and most needs to be able to tell.
-        if self._running:
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(QColor(theme.CURSOR))
-            painter.drawEllipse(QPointF(self._mm_to_px(self._cue_mm), y),
-                                theme.CURSOR_RADIUS_PX,
-                                theme.CURSOR_RADIUS_PX)
+        # Pacing cue (circle) - drawn before the participant's marker so
+        # that the marker stays visible when the two overlap, which is
+        # exactly when the participant is on pace and most needs to be able
+        # to tell. While an interval is running this is the moving cue,
+        # travelling at cue_speed_mm_s; before it starts (during the
+        # pre-interval countdown), it stays fixed at the start point instead,
+        # so the participant has a clear target to align their fingertip to.
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(theme.CURSOR))
+        cue_x_mm = self._cue_mm if self._running else 0.0
+        painter.drawEllipse(QPointF(self._mm_to_px(cue_x_mm), y),
+                            theme.CURSOR_RADIUS_PX,
+                            theme.CURSOR_RADIUS_PX)
 
         # Participant's finger position (square), on top. Fill and border
         # carry force feedback; position comes from the position source

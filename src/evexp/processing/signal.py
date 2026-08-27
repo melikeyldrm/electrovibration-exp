@@ -5,6 +5,7 @@ Qt, or a position sensor.
 """
 
 from collections import deque
+from dataclasses import dataclass
 from typing import Deque, Optional
 
 import numpy as np
@@ -137,3 +138,54 @@ class SpeedEstimator:
         if dt <= 0:
             return None
         return abs(last.x_mm - first.x_mm) / dt
+
+
+@dataclass(frozen=True)
+class SpeedTrialStats:
+    """Speed summary for one trial, ready to drop straight into TrialResult.
+
+    mean_mm_s is None when fewer than two position samples arrived during
+    the collection window - too little data to say anything about speed,
+    distinct from a measured speed of zero.
+    """
+    mean_mm_s: Optional[float]
+    n_samples: int
+
+
+class SpeedTrialAccumulator:
+    """Collects position readings over one trial and summarises mean speed.
+
+    Consecutive-sample finite differences, one speed estimate per pair of
+    readings, averaged at the end - the trial-level analogue of
+    SpeedEstimator's sliding window, which is tuned for a live display
+    instead. Polled at the same 20 Hz cadence as ForceTrialAccumulator, and
+    for the same reason: turn many readings into the handful of numbers a
+    CSV row can hold.
+    """
+
+    def __init__(self):
+        self._prev: Optional[PositionSample] = None
+        self._speeds_mm_s: list = []
+
+    def reset(self) -> None:
+        self._prev = None
+        self._speeds_mm_s.clear()
+
+    def add(self, sample: Optional[PositionSample]) -> None:
+        """Record one reading. None means no contact at that instant."""
+        if sample is None:
+            self._prev = None
+            return
+        if self._prev is not None and sample.t != self._prev.t:
+            dt = sample.t - self._prev.t
+            if dt > 0:
+                self._speeds_mm_s.append(
+                    abs(sample.x_mm - self._prev.x_mm) / dt)
+        self._prev = sample
+
+    def stats(self) -> SpeedTrialStats:
+        n = len(self._speeds_mm_s)
+        if n == 0:
+            return SpeedTrialStats(mean_mm_s=None, n_samples=0)
+        return SpeedTrialStats(
+            mean_mm_s=sum(self._speeds_mm_s) / n, n_samples=n)

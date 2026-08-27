@@ -268,6 +268,10 @@ class ExperimenterWindow(QWidget):
                                     theme.CONSOLE_SIZE_BODY, QFont.DemiBold))
         self._message.setStyleSheet(f"color: {theme.CONSOLE_ACCENT};")
         self._message.setVisible(False)
+        # A discard reason can list problems for both intervals at once and
+        # run long - wrap it within the window instead of stretching the
+        # window to fit one line, which is what a QLabel does by default.
+        self._message.setWordWrap(True)
 
         # --- plot + table ----------------------------------------------------
         self._plot = ConvergencePlot()
@@ -441,6 +445,26 @@ class ExperimenterWindow(QWidget):
             "Practice complete — recorded session starts on the next SPACE press",
             theme.CONSOLE_ACCENT,
         )
+
+    def announce_invalid_trial(self, reason: str) -> None:
+        """Tell the experimenter a trial was discarded and will retry.
+
+        Not logged to the trial table (add_result is never called for it) -
+        this is a transient console message only, same as the other
+        _announce() calls.
+        """
+        self._announce(f"Trial discarded — {reason}", theme.CONSOLE_WARN)
+
+    def announce_training_off_target(self, reason: str) -> None:
+        """Tell the experimenter a training trial was off target.
+
+        Unlike announce_invalid_trial, nothing is actually discarded or
+        retried here - training was never logged or fed to the staircase in
+        the first place, so this is purely a heads-up the experimenter can
+        use to correct the participant before the recorded session starts.
+        Wording deliberately avoids "discarded", which would be untrue.
+        """
+        self._announce(f"Training off target — {reason}", theme.CONSOLE_WARN)
 
     # --- input -------------------------------------------------------------
 

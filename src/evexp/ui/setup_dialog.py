@@ -1,14 +1,14 @@
-"""Session setup: participant identity and the sliding speed condition.
+"""Session setup: participant identity, sliding speed and target force.
 
-Shown once, before any window opens. Both values it collects end up in the
-filename, the config snapshot and the trial log, so they are treated as data
-rather than as convenience: the speed in particular is an experimental
-condition, and a session whose recorded speed does not match the speed the
-participant was actually paced at is worse than no session at all.
+Shown once, before any window opens. All three values it collects end up in
+the filename, the config snapshot and the trial log, so they are treated as
+data rather than as convenience: speed and force are experimental
+conditions, and a session whose recorded value does not match what the
+participant was actually run at is worse than no session at all.
 
-Speed is offered as a small set of buttons rather than a free-text field.
-The conditions are fixed by the protocol, so anything outside them is a
-typo, and a typo here is invisible until analysis.
+Speed and force are each offered as a small set of buttons rather than a
+free-text field. The conditions are fixed by the protocol, so anything
+outside them is a typo, and a typo here is invisible until analysis.
 """
 
 from dataclasses import dataclass
@@ -33,13 +33,16 @@ class SessionSetup:
     """What the experimenter chose before the session started."""
     participant_id: str
     target_speed_mm_s: float
+    target_force_n: float
 
 
 class SetupDialog(QDialog):
-    """Modal dialog collecting the participant ID and speed condition."""
+    """Modal dialog collecting the participant ID, speed and force condition."""
 
     def __init__(self, speed_options: List[float],
                  default_speed_mm_s: float,
+                 force_options: List[float],
+                 default_force_n: float,
                  experiment_id: str = "",
                  parent=None):
         super().__init__(parent)
@@ -49,7 +52,11 @@ class SetupDialog(QDialog):
         self.setStyleSheet(f"background-color: {theme.CONSOLE_BG};")
 
         self._speed_options = list(speed_options)
-        self._selected_speed = self._initial_speed(default_speed_mm_s)
+        self._selected_speed = self._initial_choice(
+            self._speed_options, default_speed_mm_s)
+        self._force_options = list(force_options)
+        self._selected_force = self._initial_choice(
+            self._force_options, default_force_n)
 
         layout = QVBoxLayout()
         layout.setContentsMargins(28, 24, 28, 22)
@@ -76,23 +83,19 @@ class SetupDialog(QDialog):
 
         layout.addSpacing(6)
         layout.addWidget(self._section_label("Sliding speed"))
-
-        self._speed_group = QButtonGroup(self)
-        self._speed_group.setExclusive(True)
-        speed_row = QHBoxLayout()
-        speed_row.setSpacing(8)
-        for index, speed in enumerate(self._speed_options):
-            button = QPushButton(f"{speed:g} mm/s")
-            button.setCheckable(True)
-            button.setCursor(Qt.PointingHandCursor)
-            button.setFont(QFont(theme.CONSOLE_FONT, 12, QFont.DemiBold))
-            button.setMinimumHeight(44)
-            button.setStyleSheet(self._speed_button_style())
-            button.setChecked(speed == self._selected_speed)
-            self._speed_group.addButton(button, index)
-            speed_row.addWidget(button)
+        self._speed_group, speed_row = self._build_choice_row(
+            self._speed_options, self._selected_speed,
+            label_fmt=lambda v: f"{v:g} mm/s")
         self._speed_group.idClicked.connect(self._on_speed_clicked)
         layout.addLayout(speed_row)
+
+        layout.addSpacing(6)
+        layout.addWidget(self._section_label("Target force"))
+        self._force_group, force_row = self._build_choice_row(
+            self._force_options, self._selected_force,
+            label_fmt=lambda v: f"{v:g} N")
+        self._force_group.idClicked.connect(self._on_force_clicked)
+        layout.addLayout(force_row)
 
         self._warning = QLabel("")
         self._warning.setWordWrap(True)
@@ -113,14 +116,39 @@ class SetupDialog(QDialog):
 
     # --- construction helpers ----------------------------------------------
 
-    def _initial_speed(self, default_speed_mm_s: float) -> float:
-        if not self._speed_options:
-            raise ValueError("speed_options must contain at least one speed")
-        if default_speed_mm_s in self._speed_options:
-            return default_speed_mm_s
+    @staticmethod
+    def _initial_choice(options: List[float], default: float) -> float:
+        if not options:
+            raise ValueError("options must contain at least one value")
+        if default in options:
+            return default
         # A default outside the offered set means the config disagrees with
         # itself; pick something valid rather than starting with no selection.
-        return self._speed_options[0]
+        return options[0]
+
+    def _build_choice_row(self, options: List[float], selected: float,
+                          label_fmt) -> tuple:
+        """One exclusive row of chip buttons, e.g. the speed or force row.
+
+        Both rows are built the same way, so this is shared rather than
+        duplicated: a QButtonGroup plus one QPushButton per option, styled
+        and wired identically.
+        """
+        group = QButtonGroup(self)
+        group.setExclusive(True)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        for index, value in enumerate(options):
+            button = QPushButton(label_fmt(value))
+            button.setCheckable(True)
+            button.setCursor(Qt.PointingHandCursor)
+            button.setFont(QFont(theme.CONSOLE_FONT, 12, QFont.DemiBold))
+            button.setMinimumHeight(44)
+            button.setStyleSheet(self._choice_button_style())
+            button.setChecked(value == selected)
+            group.addButton(button, index)
+            row.addWidget(button)
+        return group, row
 
     def _section_label(self, text: str) -> QLabel:
         label = QLabel(text.upper())
@@ -130,7 +158,7 @@ class SetupDialog(QDialog):
             f"color: {theme.CONSOLE_LABEL}; letter-spacing: 1px;")
         return label
 
-    def _speed_button_style(self) -> str:
+    def _choice_button_style(self) -> str:
         return f"""
             QPushButton {{
                 background-color: {theme.CONSOLE_PANEL};
@@ -152,6 +180,9 @@ class SetupDialog(QDialog):
 
     def _on_speed_clicked(self, index: int) -> None:
         self._selected_speed = self._speed_options[index]
+
+    def _on_force_clicked(self, index: int) -> None:
+        self._selected_force = self._force_options[index]
 
     def _validation_error(self) -> Optional[str]:
         text = self._id_field.text().strip()
@@ -175,13 +206,16 @@ class SetupDialog(QDialog):
         return SessionSetup(
             participant_id=self._id_field.text().strip(),
             target_speed_mm_s=float(self._selected_speed),
+            target_force_n=float(self._selected_force),
         )
 
 
 def ask_for_setup(speed_options: List[float], default_speed_mm_s: float,
+                  force_options: List[float], default_force_n: float,
                   experiment_id: str = "") -> Optional[SessionSetup]:
     """Run the dialog. Returns None if the experimenter cancelled."""
-    dialog = SetupDialog(speed_options, default_speed_mm_s, experiment_id)
+    dialog = SetupDialog(speed_options, default_speed_mm_s,
+                         force_options, default_force_n, experiment_id)
     if dialog.exec_() != QDialog.Accepted:
         return None
     return dialog.setup()

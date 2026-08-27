@@ -112,6 +112,10 @@ force:
   # red above it; full_scale_n is the distance from target at which the
   # colour is fully saturated (blue or red), not a hard cutoff.
   target_n: 1.0
+  # Force conditions offered in the setup dialog, same idea as
+  # timing.speed_options_mm_s: fixed by the protocol, so free-text entry
+  # is deliberately not allowed there either.
+  force_levels_n: [0.5, 1.0, 1.5]
   full_scale_n: 0.5
   # Short moving average applied before colouring, in samples of the 20 Hz
   # UI poll (5 samples = 250 ms). Without it, noise crossing a colour
@@ -130,7 +134,15 @@ force:
   # still reports raw volts wearing a newton label until Umut's real .cal
   # file replaces ForceCalibration.placeholder() a few lines above this in
   # run_gui.py.
-  source: simulated #nano17 or mouse_y
+  source: mouse_y #nano17 or simulated
+
+validity:
+  # A trial is discarded (not logged, not fed to the staircase, presented
+  # again at the same stimulus level) if the mean measured force or speed
+  # during the two intervals strays from target by more than this fraction.
+  # Either check is skipped if that channel has no source configured.
+  force_tolerance_pct: 15
+  speed_tolerance_pct: 15
 
 acquisition:
   # Continuous sensor acquisition. 10 kHz is comfortable for this setup: the

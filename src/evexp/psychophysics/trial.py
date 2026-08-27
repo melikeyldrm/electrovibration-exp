@@ -75,6 +75,11 @@ class TrialResult:
     timestamp: float
     response_time_s: float
     training: bool = False    # True for training trials; staircase not updated
+    # False if measured force/speed fell outside the configured tolerance of
+    # target; such a trial is not logged and does not update the staircase
+    # (see submit_response). Always True for training trials, which are
+    # exempt from the validity check entirely.
+    valid: bool = True
 
     # Filled in by SessionController after submit_response(), not by
     # Trial2IFC (hardware-free). None means "no force source configured",
@@ -83,6 +88,9 @@ class TrialResult:
     std_normal_force_n: Optional[float] = None
     force_in_band_fraction: Optional[float] = None
     cursor_speed_mm_s: Optional[float] = None
+    # Measured mean speed over the trial, distinct from cursor_speed_mm_s
+    # (the target/paced speed). None if no position source was configured.
+    mean_speed_mm_s: Optional[float] = None
 
 
 class Trial2IFC:
@@ -193,11 +201,17 @@ class Trial2IFC:
 
         raise RuntimeError(f"advance() called in state {self.state.name}")
 
-    def submit_response(self, response_interval: int) -> TrialResult:
-        """Score the participant's answer, update the staircase, end the trial.
+    def submit_response(self, response_interval: int,
+                        valid: bool = True) -> TrialResult:
+        """Score the participant's answer, end the trial.
 
-        For training trials the staircase is not updated and reversal is always
-        False; the state machine returns to READY so the next trial can start.
+        The staircase is updated - and the trial index advanced - only for a
+        real (non-training) trial with valid=True. valid=False is for a
+        trial whose measured force/speed fell outside tolerance: it is
+        scored for the record but must not influence the staircase, and
+        since staircase.value is therefore unchanged, the next start_trial()
+        naturally re-presents the same stimulus level. Training trials are
+        always exempt from the staircase, regardless of valid.
         """
         if self.state is not TrialState.AWAITING_RESPONSE:
             raise RuntimeError(
@@ -207,13 +221,14 @@ class Trial2IFC:
             raise ValueError("response_interval must be 1 or 2")
 
         correct = response_interval == self._stimulus_interval
+        commit = valid and not self._is_training
 
-        if self._is_training:
-            reversal = False
-        else:
+        if commit:
             reversals_before = len(self.staircase.reversals)
             self.staircase.update(correct)
             reversal = len(self.staircase.reversals) > reversals_before
+        else:
+            reversal = False
 
         result = TrialResult(
             trial_index=self.trial_index,
@@ -225,19 +240,21 @@ class Trial2IFC:
             timestamp=time.time(),
             response_time_s=time.time() - self._response_open_t,
             training=self._is_training,
+            valid=valid,
         )
 
         self.results.append(result)
-        if not self._is_training:
+        if commit:
             self.trial_index += 1
 
-        if self._is_training:
-            # Training trials never advance the staircase; always return to READY.
-            self.state = TrialState.READY
-        else:
+        if commit:
             self.state = (
                 TrialState.FINISHED if self.staircase.finished else TrialState.READY
             )
+        else:
+            # Training, or a discarded invalid trial: never advances to
+            # FINISHED, always returns to READY for the next attempt.
+            self.state = TrialState.READY
 
         return result
 

@@ -128,6 +128,7 @@ def main():
     session_cfg = cfg["session"]
     timing_cfg = cfg["timing"]
     display_cfg = cfg["display"]
+    force_cfg = cfg["force"]
 
     app = QApplication(sys.argv)
 
@@ -143,6 +144,8 @@ def main():
     setup = ask_for_setup(
         speed_options=timing_cfg["speed_options_mm_s"],
         default_speed_mm_s=timing_cfg["cursor_speed_mm_s"],
+        force_options=force_cfg["force_levels_n"],
+        default_force_n=force_cfg["target_n"],
         experiment_id=session_cfg["experiment_id"],
     )
     if setup is None:
@@ -151,10 +154,13 @@ def main():
 
     participant_id = setup.participant_id
     cue_speed_mm_s = setup.target_speed_mm_s
-   
+    target_force_n = setup.target_force_n
+
     timing_cfg["cursor_speed_mm_s"] = cue_speed_mm_s
+    force_cfg["target_n"] = target_force_n
     session_cfg["participant_id"] = participant_id
-    print(f"Participant {participant_id}, sliding speed {cue_speed_mm_s:g} mm/s")
+    print(f"Participant {participant_id}, sliding speed {cue_speed_mm_s:g} mm/s, "
+          f"target force {target_force_n:g} N")
 
     # Three cards: two force sensors joined into one channel list (so
     # acquisition sees a single device), plus the stimulus card, whose AI
@@ -274,7 +280,6 @@ def main():
 
     # Force feedback. "nano17" polls the DAQ's latest sample via
     # acquisition.latest(); "mouse_y"/"simulated" are for dev without hardware.
-    force_cfg = cfg["force"]
     force_bands = ForceBands(
         target_n=force_cfg["target_n"],
         full_scale_n=force_cfg["full_scale_n"],
@@ -300,6 +305,7 @@ def main():
         if isinstance(position_source, NeonodePositionSource):
             position_source.disconnect()
         print(acquisition.stats().describe())
+        print(f"Invalid trials discarded: {controller.n_invalid}")
         # AO task is separate from acquisition's AI task and is not closed
         # by acquisition.stop() - close it explicitly if it was left running.
         if args.real_daq and stimulus_output.is_active:
@@ -337,6 +343,8 @@ def main():
         acquisition=acquisition,
         raw_writer=raw_writer,
         force_calibration=force_calibration,
+        force_tolerance_pct=cfg.get("validity", {}).get("force_tolerance_pct"),
+        speed_tolerance_pct=cfg.get("validity", {}).get("speed_tolerance_pct"),
     )
 
     experimenter.show()
