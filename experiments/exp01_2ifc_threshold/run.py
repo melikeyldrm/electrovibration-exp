@@ -23,11 +23,20 @@ def main():
     session_cfg, sim_cfg = cfg["session"], cfg["simulation"]
     out_dir = Path(session_cfg["output_dir"])
 
+    timing_cfg = cfg["timing"]
     staircase = StaircaseController(StaircaseConfig(**cfg["staircase"]))
     trial = Trial2IFC(
         stimulus=MockStimulusOutput(),
         staircase=staircase,
-        timing=TrialTiming(**cfg["timing"]),
+        # Pick out only the fields TrialTiming takes: the timing block also
+        # carries speed_options_mm_s (for the GUI setup dialog), which is not
+        # a TrialTiming argument. Mirrors run_gui.py's explicit construction.
+        timing=TrialTiming(
+            pre_interval_wait_s=timing_cfg["pre_interval_wait_s"],
+            gap_s_override=timing_cfg.get("gap_s_override"),
+            cursor_speed_mm_s=timing_cfg["cursor_speed_mm_s"],
+            cursor_travel_mm=timing_cfg["cursor_travel_mm"],
+        ),
     )
     runner = SimulatedRunner(
         trial,
