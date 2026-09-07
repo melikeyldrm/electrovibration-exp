@@ -1,11 +1,11 @@
-# Configuration for exp01: 2IFC absolute detection threshold for electrovibration.
-# Trial structure follows Vardar & Kuchenbecker (2021) for the base 2IFC paradigm;
+# Configuration for exp01: 2AFC absolute detection threshold for electrovibration.
+# Trial structure follows Vardar & Kuchenbecker (2021) for the base 2AFC paradigm;
 # the staircase rule (dB-domain 3-down/1-up), interval timing, and voltage safety
 # ceiling follow the protocol supplied by Umut, based on Vuik/Pool/Kenanoglu/Vardar
 # 2024/2025 (Impact of Whole-Body Vibrations on Electrovibration Perception).
 
 session:
-  experiment_id: exp01_2ifc_threshold
+  experiment_id: exp01_2afc_threshold
   participant_id: sim_participant_01
   output_dir: data
 
@@ -77,7 +77,7 @@ staircase:
   # If a wrong answer lands at the ceiling this many times in a row, abort -
   # the participant isn't perceiving the max deliverable stimulus, continuing
   # wastes their time.
-  max_consecutive_wrong_at_ceiling: 5
+  max_consecutive_wrong_at_ceiling: 3
   # "gave three correct answers (not necessarily consecutive)": a wrong answer
   # triggers an immediate up-step but does NOT reset the cumulative correct
   # counter. Set to true to restore classic Levitt (correct streak must be

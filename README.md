@@ -1,7 +1,7 @@
 # electrovibration-exp
 
 Psychophysics rig for measuring electrovibration detection thresholds on a
-touchscreen, using a 2-interval-forced-choice (2IFC) staircase procedure.
+touchscreen, using a 2-alternative-forced-choice (2AFC) staircase procedure.
 A participant slides a finger through two intervals (one carries the
 electrovibration stimulus, one does not) and reports which one felt
 different. An adaptive staircase adjusts the stimulus voltage trial by trial
@@ -12,8 +12,8 @@ they press with (via two ATI Nano17 force sensors), so trials can be
 reviewed for grip force, timing, and touch trajectory alongside the
 psychophysical response.
 
-Experiment `exp01_2ifc_threshold` implements the specific protocol currently
-being run (based on Vardar & Kuchenbecker 2021 for the 2IFC paradigm, and a
+Experiment `exp01_2afc_threshold` implements the specific protocol currently
+being run (based on Vardar & Kuchenbecker 2021 for the 2AFC paradigm, and a
 staircase/timing/safety protocol supplied by the lab). Later experiments
 would live alongside it under `experiments/`.
 
@@ -23,7 +23,7 @@ would live alongside it under `experiments/`.
 config/experiment.yaml        Single YAML config: session, display calibration,
                                staircase, trial timing, force feedback, acquisition.
 experiments/
-  exp01_2ifc_threshold/
+  exp01_2afc_threshold/
     run.py                    Headless simulated run (no GUI, no hardware) - checks
                                that the staircase/trial/logging pipeline works end to end.
     run_gui.py                Full interactive session: real or mocked DAQ hardware,
@@ -33,12 +33,12 @@ src/evexp/
                                finger-position tracking (mouse or Neonode IR sensor),
                                screen calibration, voltage safety limits, mock devices
                                for developing without hardware attached.
-  psychophysics/               Trial state machine (Trial2IFC) and the adaptive
+  psychophysics/               Trial state machine (Trial2AFC) and the adaptive
                                staircase controller.
   processing/                  Signal processing: force-band feedback colouring,
                                waveform helpers.
-  data/                        Trial loggers: per-session CSV/HDF5 summaries and
-                               raw per-trial CSV/HDF5 writers for the full sensor stream.
+  data/                        Trial loggers: per-session CSV summary and
+                               raw per-trial CSV writer for the full sensor stream.
   ui/                          PyQt5 windows: participant-facing display, experimenter
                                console, session orchestration (SessionController).
 scripts/                      One-off hardware probing/debugging scripts (Neonode HID
@@ -75,16 +75,16 @@ trial/staircase/logging pipeline after a code change, before touching a
 real session:
 
 ```bash
-python experiments/exp01_2ifc_threshold/run.py
+python experiments/exp01_2afc_threshold/run.py
 ```
 
-Writes a CSV, an HDF5 summary, and a convergence plot to `data/`.
+Writes a CSV and a convergence plot to `data/`.
 
 **Interactive session** — the real experiment runner, with a participant
 window and an experimenter console:
 
 ```bash
-python experiments/exp01_2ifc_threshold/run_gui.py
+python experiments/exp01_2afc_threshold/run_gui.py
 ```
 
 By default this uses mocked DAQ hardware and the mouse for finger position,

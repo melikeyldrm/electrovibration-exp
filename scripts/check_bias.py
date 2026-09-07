@@ -9,7 +9,7 @@ import yaml
 
 from evexp.hardware.mock import MockStimulusOutput
 from evexp.psychophysics.staircase import StaircaseConfig, StaircaseController
-from evexp.psychophysics.trial import SimulatedRunner, Trial2IFC, TrialTiming
+from evexp.psychophysics.trial import SimulatedRunner, Trial2AFC, TrialTiming
 
 CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "experiment.yaml"
 
@@ -19,7 +19,7 @@ sim_cfg = cfg["simulation"]
 biases = []
 for seed in range(20):
     staircase = StaircaseController(StaircaseConfig(**cfg["staircase"]))
-    trial = Trial2IFC(
+    trial = Trial2AFC(
         stimulus=MockStimulusOutput(),
         staircase=staircase,
         timing=TrialTiming(**cfg["timing"]),
@@ -43,7 +43,7 @@ print(f"True threshold: {sim_cfg['true_threshold_v']} V")
 
 print("\n--- Detailed debug for seed=3 ---")
 staircase = StaircaseController(StaircaseConfig(**cfg["staircase"]))
-trial = Trial2IFC(
+trial = Trial2AFC(
     stimulus=MockStimulusOutput(),
     staircase=staircase,
     timing=TrialTiming(**cfg["timing"]),

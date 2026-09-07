@@ -1,4 +1,4 @@
-"""Interactive 2IFC threshold session with a real participant."""
+"""Interactive 2AFC threshold session with a real participant."""
 
 import argparse
 import signal
@@ -25,7 +25,7 @@ from evexp.hardware.nidaq import NiDaqDevice, gauge_channel_map
 from evexp.processing.force_feedback import ForceBands
 from evexp.hardware.screen import ScreenCalibration
 from evexp.psychophysics.staircase import StaircaseConfig, StaircaseController
-from evexp.psychophysics.trial import Trial2IFC, TrialTiming
+from evexp.psychophysics.trial import Trial2AFC, TrialTiming
 from evexp.ui.experimenter_window import ExperimenterWindow
 from evexp.ui.participant_window import ParticipantWindow
 from evexp.ui.session_controller import SessionController
@@ -192,7 +192,7 @@ def main():
         print("DAQ: MockDAQDevice/MockStimulusOutput - no hardware")
 
     staircase = StaircaseController(StaircaseConfig(**cfg["staircase"]))
-    trial = Trial2IFC(
+    trial = Trial2AFC(
         stimulus=stimulus_output,
         staircase=staircase,
         timing=TrialTiming(

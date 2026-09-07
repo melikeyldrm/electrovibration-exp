@@ -2,14 +2,14 @@ import random
 
 from evexp.hardware.mock import MockStimulusOutput
 from evexp.psychophysics.staircase import StaircaseConfig, StaircaseController
-from evexp.psychophysics.trial import SimulatedRunner, Trial2IFC, TrialState
+from evexp.psychophysics.trial import SimulatedRunner, Trial2AFC, TrialState
 
 
 def make_trial():
     cfg = StaircaseConfig(start_value=90, step_sizes=[8, 4, 2, 1],
                           n_reversals_to_stop=8, rule="1up2down",
                           min_value=0, max_value=150)
-    return Trial2IFC(MockStimulusOutput(), StaircaseController(cfg),
+    return Trial2AFC(MockStimulusOutput(), StaircaseController(cfg),
                      rng=random.Random(0))
 
 
@@ -22,7 +22,7 @@ def advance_to_awaiting_response(trial):
         pass
 
 
-def test_state_sequence_follows_2ifc_structure():
+def test_state_sequence_follows_2afc_structure():
     trial = make_trial()
     assert trial.state is TrialState.READY
     trial.start_trial()
@@ -113,6 +113,24 @@ def test_voltages_over_trials_excludes_training():
     assert voltages[0] == 90.0  # staircase start value
 
 
+def test_voltages_over_trials_excludes_invalid():
+    trial = make_trial()
+
+    # a discarded trial (force/speed off target): scored but not committed
+    trial.start_trial(training=False)
+    advance_to_awaiting_response(trial)
+    trial.submit_response(trial.stimulus_interval, valid=False)
+
+    # a real, valid trial at the same (unchanged) staircase level
+    trial.start_trial(training=False)
+    advance_to_awaiting_response(trial)
+    trial.submit_response(trial.stimulus_interval)
+
+    voltages = trial.voltages_over_trials()
+    assert len(voltages) == 1
+    assert voltages[0] == 90.0
+
+
 def test_submit_response_raises_in_wrong_state():
     trial = make_trial()
     import pytest as pt
@@ -173,7 +191,7 @@ def test_pre_interval_wait_appears_before_each_interval():
         rule="3down1up", min_value=0.01, max_value=2.0, domain="db",
         consecutive_required=False,
     ))
-    trial = Trial2IFC(MockStimulusOutput(), staircase, rng=random.Random(0))
+    trial = Trial2AFC(MockStimulusOutput(), staircase, rng=random.Random(0))
 
     states_visited = []
     trial.start_trial(training=True)
@@ -201,7 +219,7 @@ def make_production_trial():
         rule="3down1up", min_value=0.01, max_value=2.0,
         domain="db", consecutive_required=False,
     )
-    return Trial2IFC(MockStimulusOutput(), StaircaseController(cfg),
+    return Trial2AFC(MockStimulusOutput(), StaircaseController(cfg),
                       rng=random.Random(0), training_voltage=2.0)
 
 

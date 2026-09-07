@@ -31,7 +31,7 @@ def dialog(qapp):
     from evexp.ui.setup_dialog import SetupDialog
     return SetupDialog(SPEEDS, default_speed_mm_s=50.0,
                        force_options=FORCES, default_force_n=1.0,
-                       experiment_id="exp01_2ifc_threshold")
+                       experiment_id="exp01_2afc_threshold")
 
 
 def ok_button(dialog):

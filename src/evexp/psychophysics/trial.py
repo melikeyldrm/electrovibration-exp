@@ -1,4 +1,4 @@
-"""Two-interval forced-choice (2IFC - the participant feels two intervals
+"""Two-alternative forced-choice (2AFC - the participant feels two intervals
 and says which one had the stimulus, rather than just yes/no) trial
 sequencing.
 
@@ -65,7 +65,7 @@ class TrialTiming:
 
 @dataclass
 class TrialResult:
-    """Record of a single completed 2IFC trial."""
+    """Record of a single completed 2AFC trial."""
     trial_index: int
     applied_voltage: float
     stimulus_interval: int    # 1 or 2 - which interval carried the stimulus
@@ -82,7 +82,7 @@ class TrialResult:
     valid: bool = True
 
     # Filled in by SessionController after submit_response(), not by
-    # Trial2IFC (hardware-free). None means "no force source configured",
+    # Trial2AFC (hardware-free). None means "no force source configured",
     # distinct from a force reading of zero.
     mean_normal_force_n: Optional[float] = None
     std_normal_force_n: Optional[float] = None
@@ -93,8 +93,8 @@ class TrialResult:
     mean_speed_mm_s: Optional[float] = None
 
 
-class Trial2IFC:
-    """Sequences 2IFC trials as a non-blocking state machine.
+class Trial2AFC:
+    """Sequences 2AFC trials as a non-blocking state machine.
 
     READY -> PRE_INTERVAL_WAIT -> INTERVAL_1 -> GAP -> PRE_INTERVAL_WAIT
           -> INTERVAL_2 -> AWAITING_RESPONSE -> READY
@@ -265,8 +265,15 @@ class Trial2IFC:
             self.stimulus.stimulus_off()
 
     def voltages_over_trials(self) -> List[float]:
-        """Voltages for real trials only, in order, for convergence plotting."""
-        return [r.applied_voltage for r in self.results if not r.training]
+        """Voltages for real, staircase-affecting trials only, in order, for
+        convergence plotting. Excludes training trials and discarded invalid
+        trials (neither updates the staircase, so neither belongs on the
+        convergence curve)."""
+        return [
+            r.applied_voltage
+            for r in self.results
+            if not r.training and r.valid
+        ]
 
 
 class SimulatedRunner:
@@ -280,7 +287,7 @@ class SimulatedRunner:
 
     def __init__(
         self,
-        trial: Trial2IFC,
+        trial: Trial2AFC,
         true_threshold: float,
         slope: float = 0.15,
         rng: Optional[random.Random] = None,

@@ -1,4 +1,4 @@
-"""Headless simulated run of the exp01 2IFC staircase.
+"""Headless simulated run of the exp01 2AFC staircase.
 
 Verifies that the trial state machine, staircase, and loggers work end to end
 before any GUI or hardware is involved.
@@ -10,10 +10,9 @@ import matplotlib.pyplot as plt
 import yaml
 
 from evexp.data.csv_logger import CSVTrialLogger
-from evexp.data.hdf5_writer import HDF5TrialWriter
 from evexp.hardware.mock import MockStimulusOutput
 from evexp.psychophysics.staircase import StaircaseConfig, StaircaseController
-from evexp.psychophysics.trial import SimulatedRunner, Trial2IFC, TrialTiming
+from evexp.psychophysics.trial import SimulatedRunner, Trial2AFC, TrialTiming
 
 CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "experiment.yaml"
 
@@ -25,7 +24,7 @@ def main():
 
     timing_cfg = cfg["timing"]
     staircase = StaircaseController(StaircaseConfig(**cfg["staircase"]))
-    trial = Trial2IFC(
+    trial = Trial2AFC(
         stimulus=MockStimulusOutput(),
         staircase=staircase,
         # Pick out only the fields TrialTiming takes: the timing block also
@@ -53,15 +52,6 @@ def main():
 
     stem = session_cfg["experiment_id"]
     CSVTrialLogger(str(out_dir / f"{stem}.csv")).log_all(results)
-    HDF5TrialWriter(str(out_dir / f"{stem}.h5")).write(
-        results,
-        {
-            "experiment_id": stem,
-            "participant_id": session_cfg["participant_id"],
-            "staircase_rule": cfg["staircase"]["rule"],
-        },
-        staircase.threshold_estimate,
-    )
 
     plt.figure(figsize=(8, 4))
     plt.plot(trial.voltages_over_trials(), marker="o", markersize=3, linewidth=1)

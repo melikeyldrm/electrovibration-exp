@@ -1,10 +1,5 @@
 """Raw per-trial signal writer: one CSV file per trial, one folder per
 participant, both intervals stacked in the same file.
-
-Replaces raw_hdf5_writer.py (kept in the repo, no longer wired up). The
-HDF5 grouping advantage disappeared once each trial became its own file,
-and CSV is readable without a library. Existing .h5 recordings are
-historical data and are neither read nor migrated by this writer.
 """
 
 from pathlib import Path

@@ -1,7 +1,7 @@
-"""Glue between the Trial2IFC state machine and the Qt event loop.
+"""Glue between the Trial2AFC state machine and the Qt event loop.
 
 Phase transitions are driven by a one-shot QTimer, not blocking waits, so
-the UI stays responsive and Trial2IFC itself stays Qt-free and hardware-free
+the UI stays responsive and Trial2AFC itself stays Qt-free and hardware-free
 (force source, force stats, and raw recording all live here instead).
 
 A repeating timer polls position/force sources at a fixed rate and pushes
@@ -28,7 +28,7 @@ from evexp.hardware.force import ForceCalibration, ForceSource
 from evexp.hardware.position import PositionSource
 from evexp.processing.force_feedback import ForceBands, ForceTrialAccumulator
 from evexp.processing.signal import SpeedEstimator, SpeedTrialAccumulator
-from evexp.psychophysics.trial import Trial2IFC, TrialState
+from evexp.psychophysics.trial import Trial2AFC, TrialState
 from evexp.ui.experimenter_window import ExperimenterWindow
 from evexp.ui.participant_window import ParticipantWindow
 from evexp.ui.recording_controller import RecordingController
@@ -45,14 +45,14 @@ _INTERVAL_NUMBER_BY_STATE = {TrialState.INTERVAL_1: 1, TrialState.INTERVAL_2: 2}
 
 
 class SessionController(QObject):
-    """Runs a full session: drives Trial2IFC, updates both windows, and logs
+    """Runs a full session: drives Trial2AFC, updates both windows, and logs
     each trial's result. This is the object that ties the trial state
     machine, the participant/experimenter windows, sensor polling, and
     optional raw recording together into one running experiment."""
 
     def __init__(
         self,
-        trial: Trial2IFC,
+        trial: Trial2AFC,
         participant: ParticipantWindow,
         experimenter: ExperimenterWindow,
         logger: CSVTrialLogger,
@@ -239,7 +239,7 @@ class SessionController(QObject):
         result = self.trial.submit_response(
             response_interval, valid=(self._current_is_training or not problems))
 
-        # Filled in here rather than by Trial2IFC, since these come from
+        # Filled in here rather than by Trial2AFC, since these come from
         # hardware the trial state machine has no knowledge of.
         if force_stats is not None:
             result.mean_normal_force_n = force_stats.mean_n

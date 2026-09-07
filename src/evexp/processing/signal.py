@@ -64,8 +64,8 @@ def hold_to_grid(sample_times: np.ndarray, sample_values: np.ndarray,
     the first sample are filled with fill_before_first (NaN by default), so
     a gap at the very start of a trial is visible rather than backfilled
     with data that did not exist yet. Used to align the ~200 Hz
-    position/speed stream with the 10 kHz force/AI stream for a single
-    HDF5 file with one sample count per trial.
+    position/speed stream with the 10 kHz force/AI stream so both share
+    one sample count per trial.
     """
     sample_times = np.asarray(sample_times, dtype=float)
     sample_values = np.asarray(sample_values, dtype=float)

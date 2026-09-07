@@ -1,8 +1,7 @@
-"""Per-trial CSV logging, as an alternative to the end-of-session HDF5 file.
+"""Per-trial CSV logging.
 
 Written incrementally (one row appended per trial) rather than all at once,
-so progress survives if the session is interrupted. See hdf5_writer.py for
-the richer, all-at-once format written at the end of a session.
+so progress survives if the session is interrupted.
 """
 
 import csv
