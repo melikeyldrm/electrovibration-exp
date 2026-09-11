@@ -1,14 +1,8 @@
 """Session setup: participant identity, sliding speed and target force.
 
-Shown once, before any window opens. All three values it collects end up in
-the filename, the config snapshot and the trial log, so they are treated as
-data rather than as convenience: speed and force are experimental
-conditions, and a session whose recorded value does not match what the
-participant was actually run at is worse than no session at all.
-
-Speed and force are each offered as a small set of buttons rather than a
-free-text field. The conditions are fixed by the protocol, so anything
-outside them is a typo, and a typo here is invisible until analysis.
+Shown once, before any window opens. Speed and force are offered as a
+small set of buttons rather than free text, since the conditions are
+fixed by the protocol.
 """
 
 from dataclasses import dataclass
@@ -22,9 +16,7 @@ from PyQt5.QtWidgets import (QButtonGroup, QDialog, QDialogButtonBox,
 
 from evexp.ui import theme
 
-# Characters that would be awkward or unsafe in a filename. The participant
-# ID becomes part of the output path, so it is restricted at the point of
-# entry rather than mangled silently later.
+# Characters unsafe in a filename; the participant ID becomes part of the output path.
 _FORBIDDEN = set('\\/:*?"<>|')
 
 
@@ -122,18 +114,11 @@ class SetupDialog(QDialog):
             raise ValueError("options must contain at least one value")
         if default in options:
             return default
-        # A default outside the offered set means the config disagrees with
-        # itself; pick something valid rather than starting with no selection.
         return options[0]
 
     def _build_choice_row(self, options: List[float], selected: float,
                           label_fmt) -> tuple:
-        """One exclusive row of chip buttons, e.g. the speed or force row.
-
-        Both rows are built the same way, so this is shared rather than
-        duplicated: a QButtonGroup plus one QPushButton per option, styled
-        and wired identically.
-        """
+        """One exclusive row of chip buttons, e.g. the speed or force row."""
         group = QButtonGroup(self)
         group.setExclusive(True)
         row = QHBoxLayout()

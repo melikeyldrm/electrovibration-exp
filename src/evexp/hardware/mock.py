@@ -1,10 +1,4 @@
-"""Stand-ins for hardware that is absent, unfinished, or inconvenient.
-
-These exist so the acquisition path, the trial loop and the UI can all be
-exercised end to end without a DAQ card, an amplifier or a force sensor.
-They imitate the real interfaces closely enough that swapping the real
-implementations in is a change of constructor, not of calling code.
-"""
+"""Stand-ins for hardware that is absent, unfinished, or inconvenient."""
 
 import math
 import random
@@ -16,8 +10,7 @@ import numpy as np
 from evexp.hardware.base import (DAQDevice, SensorChunk, SensorSample,
                                  StimulusOutput)
 
-# Twelve strain-gauge channels: two ATI Nano17s, FS1 on ai0..ai5 and FS2 on
-# ai6..ai11 (see nidaq.DEFAULT_CHANNEL_MAP).
+# Twelve strain-gauge channels: FS1 on ai0..ai5, FS2 on ai6..ai11.
 DEFAULT_GAUGE_CHANNELS: Tuple[str, ...] = (
     tuple(f"fs1_gauge{i}" for i in range(6))
     + tuple(f"fs2_gauge{i}" for i in range(6))
@@ -27,18 +20,8 @@ DEFAULT_GAUGE_CHANNELS: Tuple[str, ...] = (
 class MockDAQDevice(DAQDevice):
     """Simulated acquisition, block-oriented like the real thing.
 
-    Two behaviours worth knowing about:
-
-    Timing is honest. read_chunk() sleeps until the block it is returning
-    would actually have been acquired, so a read loop against this device
-    runs at the same rate it will against the card. Without that, threading
-    and buffering bugs stay hidden until the hardware arrives, which is the
-    worst moment to find them.
-
-    Signals are simple. A slow drift plus noise on each gauge, with a
-    load-dependent term so that setting the applied voltage visibly changes
-    the data. It is not a model of a fingertip - it is a signal with the
-    right shape, rate and dimensionality for the code downstream.
+    read_chunk() sleeps until the block would actually have been acquired,
+    so a read loop runs at the same rate it will against real hardware.
     """
 
     def __init__(self, channels: Optional[Sequence[str]] = None,
@@ -89,8 +72,6 @@ class MockDAQDevice(DAQDevice):
         t0 = self._t_start + first_index / self._sample_rate_hz
 
         if self.realtime:
-            # Wait until the last sample of this block would have been
-            # acquired, so callers see the real cadence.
             ready_at = self._t_start + (first_index + n_samples) / self._sample_rate_hz
             delay = ready_at - time.perf_counter()
             if delay > timeout_s:
@@ -120,9 +101,6 @@ class MockDAQDevice(DAQDevice):
         n_channels = len(self._channels)
         data = np.empty((n_channels, n_samples))
 
-        # A distinct slow component per channel keeps the channels
-        # distinguishable, so a wiring or ordering mistake downstream shows
-        # up as obviously wrong rather than as plausible noise.
         for i in range(n_channels):
             drift = 0.05 * math.sin(0.3 + 0.7 * i) * np.sin(2 * np.pi * (0.2 + 0.05 * i) * t)
             data[i] = 0.3 + drift
@@ -137,11 +115,7 @@ class MockDAQDevice(DAQDevice):
         self._applied_voltage = voltage
 
     def read(self) -> SensorSample:
-        """One sample per channel.
-
-        Overridden to stay non-blocking: the base implementation reads a
-        one-sample block, which in realtime mode would wait for it.
-        """
+        """One sample per channel, non-blocking."""
         if not self._running:
             raise RuntimeError("Device must be started before reading.")
         return SensorSample(
@@ -160,8 +134,7 @@ class MockDAQDevice(DAQDevice):
 class MockStimulusOutput(StimulusOutput):
     """Stand-in for the DAQ output -> amplifier -> touchscreen chain.
 
-    Records every on/off transition, so a simulated run can be checked for
-    the correct number of activations per trial without any hardware.
+    Records every on/off transition for later inspection.
     """
 
     def __init__(self, verbose: bool = False):
@@ -179,7 +152,6 @@ class MockStimulusOutput(StimulusOutput):
         self._record("on")
 
     def stimulus_off(self) -> None:
-        # Calling this while already off is harmless; it keeps the caller simple.
         was_active = self._active
         self._active = False
         if was_active:
@@ -187,16 +159,13 @@ class MockStimulusOutput(StimulusOutput):
 
     @property
     def is_active(self) -> bool:
-        """Check if stimulus is currently active. read-only"""
         return self._active
 
     @property
     def amplitude_v(self) -> float:
-        """Get current amplitude in volts. read-only"""
         return self._amplitude_v
 
     def _record(self, kind: str) -> None:
-        """Record event timestamp, action, and voltage amplitude."""
         self.events.append((time.time(), kind, self._amplitude_v))
         if self.verbose:
             print(f"[stimulus] {kind:<3s} {self._amplitude_v:6.2f} V")

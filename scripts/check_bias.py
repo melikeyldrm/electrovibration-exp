@@ -1,6 +1,5 @@
 """Runs the staircase many times with different random seeds to check
-whether the threshold estimate is systematically biased, or if the
-single-run deviation we saw was just noise."""
+whether the threshold estimate is systematically biased."""
 
 import random
 from pathlib import Path

@@ -1,18 +1,7 @@
 """Several DAQ cards presented as one acquisition stream.
 
-The rig reads its two force sensors on separate cards, and the amplifier's
-monitor input on a third. SensorAcquisition, the ring buffer and everything
-above them expect a single DAQDevice with one channel list, so the cards are
-joined here rather than threaded through the whole stack.
-
-Each card runs on its own sample clock. They are configured at the same rate
-and started back to back, but crystals differ by a hundred ppm or so, so the
-cards drift slowly relative to one another - about ten milliseconds over half
-an hour. That is immaterial for normal force, which is what drives the
-staircase, and it matches how the rig's existing acquisition code works. It
-would matter for comparing the two sensors sample by sample at the stimulus
-frequency; if that is ever needed, the fix is an RTSI or PFI link and a
-source= argument on the follower cards' timing, not a change here.
+Each card runs on its own sample clock; cards drift slowly relative to one
+another (~10 ms over half an hour), which is immaterial for normal force.
 """
 
 from typing import Optional, Sequence, Tuple

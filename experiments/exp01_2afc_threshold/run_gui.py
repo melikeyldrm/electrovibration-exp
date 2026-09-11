@@ -35,12 +35,8 @@ CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "experiment.yaml"
 
 
 def write_config_snapshot(cfg: dict, path: Path) -> None:
-    """Record the configuration this session actually ran with.
-
-    Dumps the in-memory config, not the file, so runtime choices (e.g.
-    speed condition) are included. Comments from experiment.yaml are lost,
-    but that file stays in version control for reference.
-    """
+    """Record the configuration this session actually ran with, including
+    the runtime choices made in the setup dialog."""
     header = (
         "# Effective configuration for this session, including choices made\n"
         "# in the setup dialog. Generated automatically - do not edit.\n"
@@ -100,13 +96,7 @@ def list_screens() -> None:
 
 
 def move_to_screen(window, app: QApplication, screen_index: Optional[int]) -> None:
-    """Move window onto the requested monitor before showing it fullscreen.
-
-    Qt's showFullScreen() fills whichever screen the window is currently on
-    - normally wherever it was created, i.e. the primary monitor - so on a
-    two-monitor rig the participant window has to be moved explicitly or it
-    opens on the experimenter's screen instead of the touchscreen.
-    """
+    """Move window onto the requested monitor before showing it fullscreen."""
     if screen_index is None:
         return
     screens = app.screens()
@@ -132,10 +122,6 @@ def main():
 
     app = QApplication(sys.argv)
 
-    # Physical calibration of the participant display. Built before anything
-    # is drawn, because the cue track geometry and the pacing speed both
-    # depend on it, and a wrong calibration silently corrupts every recorded
-    # speed rather than failing visibly.
     calibration = ScreenCalibration.from_config(display_cfg)
     print(f"Display calibration: {calibration.describe()}")
     for warning in calibration.warnings():
@@ -162,15 +148,8 @@ def main():
     print(f"Participant {participant_id}, sliding speed {cue_speed_mm_s:g} mm/s, "
           f"target force {target_force_n:g} N")
 
-    # Three cards: two force sensors joined into one channel list (so
-    # acquisition sees a single device), plus the stimulus card, whose AI
-    # channel rides along in the same stream. Each card has its own clock
-    # - see hardware/multi_daq.py.
     if args.real_daq:
-        # ao_voltage_limit_v drives both the safety.check_voltage_limit()
-        # check and the AO channel's own hardware range (see nidaq.py) - tied
-        # to the staircase's max_value so there is one ceiling to edit, not
-        # two numbers that happen to agree until someone changes only one.
+        # ao_voltage_limit_v ties the AO hardware range to the staircase ceiling.
         stimulus_card = NiDaqDevice(
             device_name=args.daq_stim,
             channel_map={"current": args.monitor_channel},
@@ -226,7 +205,6 @@ def main():
     )
     print(f"Raw per-trial CSVs -> {raw_writer.participant_dir}")
 
-    # Two Nano17s under the plate. 
     force_calibration = DualForceCalibration.from_gain_matrices()
 
     snapshot_path = output_path.with_suffix(".yaml")
@@ -240,10 +218,7 @@ def main():
 
     travel_mm = timing_cfg["cursor_travel_mm"]
 
-    # origin_x/scale sign depend on physical sensor mounting, set after rig setup. e.g. calibration=NeonodeCalibration(origin_x=123.0, mm_per_unit_x=-0.1),
-
     if args.neonode:
-       
         position_source = NeonodePositionSource(
             transport=HidNeonodeTransport(),
             calibration=NeonodeCalibration(),
@@ -258,7 +233,6 @@ def main():
         position_source = ManualPositionSource(travel_mm=travel_mm)
         print("Position source: mouse (move the pointer along the cue track)")
 
-    # Must exist before the force source below: "nano17" reads acquisition.latest().
     acq_cfg = cfg["acquisition"]
     acquisition = SensorAcquisition(
         device=acquisition_device,
@@ -271,15 +245,11 @@ def main():
           f"{acquisition.sample_rate_hz:g} Hz "
           f"({'real/NI MAX' if args.real_daq else 'simulated'})")
 
-    # Bias: once per session, right after acquisition starts, nothing
-    # touching either sensor. Both are averaged over the same rest period.
     print("Measuring force bias (nothing touching the sensors)...")
     bias_fs1, bias_fs2 = measure_dual_bias(acquisition, n_samples=100)
     force_calibration = force_calibration.with_bias(bias_fs1, bias_fs2)
     print(f"Force calibration: {force_calibration.describe()}")
 
-    # Force feedback. "nano17" polls the DAQ's latest sample via
-    # acquisition.latest(); "mouse_y"/"simulated" are for dev without hardware.
     force_bands = ForceBands(
         target_n=force_cfg["target_n"],
         full_scale_n=force_cfg["full_scale_n"],
@@ -299,22 +269,17 @@ def main():
         )
     print(f"Force source: {force_source_kind}")
 
-    # aboutToQuit fires on every exit path, so cleanup always runs there.
     def shutdown() -> None:
         acquisition.stop()
         if isinstance(position_source, NeonodePositionSource):
             position_source.disconnect()
         print(acquisition.stats().describe())
         print(f"Invalid trials discarded: {controller.n_invalid}")
-        # AO task is separate from acquisition's AI task and is not closed
-        # by acquisition.stop() - close it explicitly if it was left running.
+        # AO task is not closed by acquisition.stop(); close it explicitly.
         if args.real_daq and stimulus_output.is_active:
             stimulus_output.stimulus_off()
 
     app.aboutToQuit.connect(shutdown)
-
-    # Routes Ctrl+C through app.quit() so aboutToQuit (and shutdown) still runs,
-    # instead of the exception escaping Qt's event loop and skipping cleanup.
     signal.signal(signal.SIGINT, lambda *_: app.quit())
 
     participant = ParticipantWindow(

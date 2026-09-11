@@ -1,17 +1,10 @@
 """Bring the Neonode up in raw mode and print touch notifications.
 
-The vendor interface is a feature-report pipe, not a stream: the host
-writes to Feature Report 1 and reads from Feature Report 2, and nothing
-arrives until the sensor is put in detection mode and enabled.
+Vendor interface is a feature-report pipe: the host writes Feature Report 1
+and reads Feature Report 2, and nothing arrives until the sensor is put in
+detection mode and enabled. Called through ctypes, not the hid package:
+hidapi's feature-report reads fail on this device. Windows only.
 
-    feature report   257 bytes: [report id][byte count][ASN.1 message]
-
-Called through ctypes rather than the hid package: hidapi writes to this
-device fine but its feature-report reads always fail here, while the same
-HidD_GetFeature call through ctypes returns the sensor's response. Windows
-only, which the rig is.
-
-Coordinates arrive in units of 0.1 mm, so no ruler calibration is needed.
 Close Neonode Workbench before running; it holds the device open.
 """
 
@@ -45,8 +38,7 @@ INVALID_HANDLE = ctypes.c_void_p(-1).value
 
 hid_dll = ctypes.WinDLL("hid")
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-# Declared explicitly: the default restype is a 32-bit int, which truncates
-# a 64-bit handle and produces failures that look like device faults.
+# Default restype is a 32-bit int, which truncates a 64-bit handle.
 kernel32.CreateFileW.restype = ctypes.c_void_p
 
 
@@ -73,11 +65,7 @@ def send(handle, message: bytes) -> bool:
 
 
 def receive(handle) -> bytes:
-    """The ASN.1 message in feature report 2, or empty if there is none.
-
-    The read fails outright when the sensor has nothing queued, which is
-    ordinary rather than an error worth reporting.
-    """
+    """The message in feature report 2, or empty if there is none."""
     buffer = ctypes.create_string_buffer(FEATURE_LENGTH)
     buffer[0] = bytes([READ_REPORT_ID])
     if not hid_dll.HidD_GetFeature(
@@ -91,9 +79,6 @@ def parse_touches(payload: bytes):
     """Every touch element in a notification frame.
 
     Each is a TLV: tag 0x42, a length, then id, event, x, y, sizes.
-    Scanning for the tag rather than a fixed offset keeps this working
-    whether the frame carries one touch or three, with or without the
-    trailing timestamp.
     """
     touches = []
     i = 0
@@ -135,11 +120,6 @@ def main() -> None:
         setup_step(handle, "Enabling touch notifications", ENABLE)
 
         print("\nSlide a finger across the sensor. Ctrl+C to stop.\n")
-        # Polled rather than driven by the input report: the buffer holds
-        # the last message, so the same one is read repeatedly until a new
-        # one lands. The trailing timestamp differs between notifications,
-        # so comparing whole payloads drops repeats without dropping a
-        # finger that genuinely stayed still.
         previous = None
         while True:
             payload = receive(handle)

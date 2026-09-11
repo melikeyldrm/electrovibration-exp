@@ -1,19 +1,10 @@
 """Physical calibration of the participant display.
 
-Everything the participant sees is specified in millimetres and converted to
-pixels only at the moment of drawing. The reason is that sliding speed is an
-experimental variable: if the cue track is laid out as a fraction of the
-window, then resizing the window silently changes both the distance the
-finger travels and the speed the pacing cue asks for, and the speed recorded
-against a trial no longer means what it says.
-
-The conversion factor is a property of the monitor, not of the window, so it
-is measured once and stored in the config.
-
-Qt's QScreen.physicalDotsPerInch() is deliberately not used. On Windows it
-usually reports the logical 96 DPI rather than the true panel geometry, which
-would produce a plausible-looking but wrong calibration - the worst kind.
-Measure the active area of the panel with a ruler instead.
+Everything the participant sees is specified in millimetres and converted
+to pixels only at draw time, so window resizing can't silently change the
+distance/speed values recorded for a trial. Measured once with a ruler,
+not from Qt's QScreen.physicalDotsPerInch(), which on Windows usually
+reports the logical 96 DPI rather than true panel geometry.
 """
 
 from dataclasses import dataclass

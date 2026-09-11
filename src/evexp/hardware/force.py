@@ -1,10 +1,8 @@
 """Raw gauge volts -> normal force.
 
-The rig carries two ATI Nano17s under the same plate. Each reports 6 gauge
-voltages and has its own 6x6 matrix and its own bias; the plate's total
-force is the sum of the two, so both are calibrated separately and only
-then added. Real matrices come from ATI's .cal files - until they arrive,
-is_placeholder marks the numbers as not real forces.
+Two ATI Nano17s under the same plate, each with its own 6x6 matrix and
+bias; the plate's total force is the sum of the two. is_placeholder marks
+gain matrices not yet sourced from ATI's .cal files.
 """
 
 import time
@@ -14,14 +12,12 @@ from typing import Optional, Sequence, Tuple
 
 import numpy as np
 
-# Channel names for the two sensors, in gauge order. The acquisition device
-# publishes all twelve on one clock; these names pick each sensor's six out.
+# Channel names for the two sensors, in gauge order.
 FS1_GAUGE_CHANNELS: Tuple[str, ...] = tuple(f"fs1_gauge{i}" for i in range(6))
 FS2_GAUGE_CHANNELS: Tuple[str, ...] = tuple(f"fs2_gauge{i}" for i in range(6))
 ALL_GAUGE_CHANNELS: Tuple[str, ...] = FS1_GAUGE_CHANNELS + FS2_GAUGE_CHANNELS
 
-# From Setup_FS1.5.py - the rig's two sensors, but not read from their .cal
-# files. Swap for the real matrices when they arrive.
+# From Setup_FS1.5.py; not read from the sensors' .cal files.
 GAIN_FS1 = [
     [-0.00196, -0.06523, -0.07955, -1.66690, -0.03715, 1.57517],
     [0.07846, 1.91376, -0.04191, -0.99642, 0.02254, -0.85845],
@@ -39,11 +35,8 @@ GAIN_FS2 = [
     [-0.76650, 7.03372, -0.09259, 7.02651, -0.52256, 7.07061],
 ]
 
-# Setup_FS1.5.py negates Fy after summing the two sensors. Expressed here as
-# a mounting rotation rather than a sign buried in the summing code, so the
-# frame convention lives in one place. Replace with the measured mounting
-# rotation once the sensor orientation relative to the screen is known.
-FLIP_Y = np.diag([1.0, -1.0, 1.0]) # validate !!!
+# Mounting rotation; matches Setup_FS1.5.py's Fy negation. Not yet validated.
+FLIP_Y = np.diag([1.0, -1.0, 1.0])
 
 
 @dataclass(frozen=True)
@@ -120,10 +113,6 @@ class ForceCalibration:
 class DualForceCalibration:
     """Both sensors. Gauge volts arrive stacked (12,) or (12,n): rows 0-5
     are FS1, rows 6-11 FS2, matching ALL_GAUGE_CHANNELS.
-
-    Exposes the same forces/normal_force/tangential_force interface as a
-    single ForceCalibration, so the writers and force sources do not need to
-    know how many sensors are under the plate.
     """
 
     fs1: ForceCalibration
@@ -139,8 +128,6 @@ class DualForceCalibration:
                 mounting=np.asarray(mounting, dtype=float),
                 serial=serial, is_placeholder=is_placeholder,
             )
-        # Builds two ForceCalibration objects from the gain matrices and 
-        # wraps them in one DualForceCalibration
         return cls(fs1=one(gain_fs1, "FS1"), fs2=one(gain_fs2, "FS2"))
 
     @classmethod

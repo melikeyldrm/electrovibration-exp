@@ -1,8 +1,4 @@
-"""Two-alternative forced-choice (2AFC - the participant feels two intervals
-and says which one had the stimulus, rather than just yes/no) trial
-sequencing.
-
-"""
+"""Two-alternative forced-choice (2AFC) trial sequencing."""
 
 import math
 import random
@@ -30,10 +26,8 @@ class TrialState(Enum):
 class TrialTiming:
     """Timing and pacing parameters shared by every trial in a session.
 
-    interval_s isn't a settable field - it's derived from travel/speed, so
-    it always matches the speed condition. gap_s_override is None by
-    default, so gap_s scales with speed the same way; set it to pin gap_s
-    to a fixed value instead.
+    interval_s is derived from travel/speed. gap_s scales with speed the
+    same way unless gap_s_override pins it to a fixed value.
     """
     pre_interval_wait_s: float = 3.0
     gap_s_override: Optional[float] = None
@@ -75,22 +69,16 @@ class TrialResult:
     timestamp: float
     response_time_s: float
     training: bool = False    # True for training trials; staircase not updated
-    # False if measured force/speed fell outside the configured tolerance of
-    # target; such a trial is not logged and does not update the staircase
-    # (see submit_response). Always True for training trials, which are
-    # exempt from the validity check entirely.
+    # False if measured force/speed fell outside tolerance; does not update
+    # the staircase. Always True for training trials.
     valid: bool = True
 
-    # Filled in by SessionController after submit_response(), not by
-    # Trial2AFC (hardware-free). None means "no force source configured",
-    # distinct from a force reading of zero.
+    # Filled in by SessionController after submit_response(), not by Trial2AFC.
     mean_normal_force_n: Optional[float] = None
     std_normal_force_n: Optional[float] = None
     force_in_band_fraction: Optional[float] = None
     cursor_speed_mm_s: Optional[float] = None
-    # Measured mean speed over the trial, distinct from cursor_speed_mm_s
-    # (the target/paced speed). None if no position source was configured.
-    mean_speed_mm_s: Optional[float] = None
+    mean_speed_mm_s: Optional[float] = None    # measured, vs. cursor_speed_mm_s (target)
 
 
 class Trial2AFC:
@@ -99,11 +87,9 @@ class Trial2AFC:
     READY -> PRE_INTERVAL_WAIT -> INTERVAL_1 -> GAP -> PRE_INTERVAL_WAIT
           -> INTERVAL_2 -> AWAITING_RESPONSE -> READY
 
-    This class contains no GUI code and never waits. The caller drives it:
-    start_trial() begins a trial, advance() is called when the current
-    phase's timer expires, and submit_response() is called when the
-    participant presses 1 or 2. A PyQt front end wires these to QTimer and
-    keyPressEvent; the headless simulation below calls them directly.
+    No GUI code and never waits: start_trial() begins a trial, advance()
+    is called when the current phase's timer expires, and
+    submit_response() is called on the participant's answer.
     """
 
     def __init__(
@@ -205,13 +191,9 @@ class Trial2AFC:
                         valid: bool = True) -> TrialResult:
         """Score the participant's answer, end the trial.
 
-        The staircase is updated - and the trial index advanced - only for a
-        real (non-training) trial with valid=True. valid=False is for a
-        trial whose measured force/speed fell outside tolerance: it is
-        scored for the record but must not influence the staircase, and
-        since staircase.value is therefore unchanged, the next start_trial()
-        naturally re-presents the same stimulus level. Training trials are
-        always exempt from the staircase, regardless of valid.
+        The staircase (and trial index) is updated only for a real
+        (non-training) trial with valid=True. Training trials are always
+        exempt, regardless of valid.
         """
         if self.state is not TrialState.AWAITING_RESPONSE:
             raise RuntimeError(
@@ -252,8 +234,6 @@ class Trial2AFC:
                 TrialState.FINISHED if self.staircase.finished else TrialState.READY
             )
         else:
-            # Training, or a discarded invalid trial: never advances to
-            # FINISHED, always returns to READY for the next attempt.
             self.state = TrialState.READY
 
         return result
@@ -265,10 +245,7 @@ class Trial2AFC:
             self.stimulus.stimulus_off()
 
     def voltages_over_trials(self) -> List[float]:
-        """Voltages for real, staircase-affecting trials only, in order, for
-        convergence plotting. Excludes training trials and discarded invalid
-        trials (neither updates the staircase, so neither belongs on the
-        convergence curve)."""
+        """Voltages for real, staircase-affecting trials only, in order."""
         return [
             r.applied_voltage
             for r in self.results
@@ -277,12 +254,9 @@ class Trial2AFC:
 
 
 class SimulatedRunner:
-    """Runs a full session headlessly against a simulated observer.
+    """Runs a full session headlessly against a simulated observer, for tests.
 
-    Used for tests and for producing convergence plots without a participant.
-    Phase durations are not waited out; transitions fire immediately so a
-    session that would take 20 minutes with a person runs in milliseconds.
-    Training trials are skipped: the simulated observer needs no warm-up.
+    Phase durations are not waited out; transitions fire immediately.
     """
 
     def __init__(
@@ -310,10 +284,6 @@ class SimulatedRunner:
     def run_until_done(self, max_trials: int = 300) -> List[TrialResult]:
         while not self.trial.finished and self.trial.trial_index < max_trials:
             self.trial.start_trial(training=False)
-            # Advance through every timed phase (wait/interval/gap/wait/interval)
-            # until the trial reaches the untimed AWAITING_RESPONSE phase,
-            # signalled by advance() returning None. Robust to the exact
-            # number of phases in the state machine.
             while self.trial.advance() is not None:
                 pass
             response = self._observer_response(

@@ -13,9 +13,7 @@ reviewed for grip force, timing, and touch trajectory alongside the
 psychophysical response.
 
 Experiment `exp01_2afc_threshold` implements the specific protocol currently
-being run (based on Vardar & Kuchenbecker 2021 for the 2AFC paradigm, and a
-staircase/timing/safety protocol supplied by the lab). Later experiments
-would live alongside it under `experiments/`.
+being run. Later experiments would live alongside it under `experiments/`.
 
 ## Project layout
 
@@ -121,11 +119,10 @@ ran with, alongside its output CSV, for reproducibility.
 pytest
 ```
 
-The suite (~19 test files) covers the hardware layer most heavily —
+The suite (~16 test files) covers the hardware layer most heavily —
 acquisition threading, the NI-DAQ AI/AO wrappers, multi-card synchronization,
 voltage safety limits, the Neonode transport — plus the staircase, trial
-state machine, and data writers. There is no CI pipeline configured yet, so
-running this locally before pushing is the only current safety net.
+state machine, and data writers.
 
 ## Known gaps / things to fix before a real session
 
@@ -138,4 +135,3 @@ running this locally before pushing is the only current safety net.
   touchscreen — see `config/experiment.yaml`'s `display` section.
 - **`pyproject.toml` has no pinned dependencies** — install the packages
   listed under Setup manually until this is fixed.
-- No CI / lint / formatting is configured yet.

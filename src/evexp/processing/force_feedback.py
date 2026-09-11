@@ -1,18 +1,4 @@
-"""Mapping applied force onto the participant's colour feedback.
-
-Kept separate from the widget that draws it for the same reason speed
-estimation is kept separate from the widget that shows it: this is pure
-computation, testable without Qt, and the exact shape of the response curve
-(band edges, how colours blend, how the border scales) is exactly the kind
-of thing that gets tuned after watching a real participant use it - it
-should be tunable without touching paint code.
-
-The mapping is deliberately monotonic and single-channel in meaning: one
-ordered axis (too little -> on target -> too much), not two independent
-"good/bad" judgements that happen to share a colour. A participant pressing
-either too hard or too softly must be able to tell which, at a glance,
-without reading a number.
-"""
+"""Mapping applied force onto the participant's colour feedback."""
 
 from dataclasses import dataclass
 from typing import Optional, Tuple
@@ -24,19 +10,11 @@ from evexp.ui import theme
 
 @dataclass(frozen=True)
 class ForceBands:
-    """The target normal force and how far off it the colour scale reaches.
+    """Target normal force and how far off it the colour scale reaches.
 
-    Symmetric around the target by design: the protocol has one target
-    force, not independent low/high thresholds, so drifting 0.3 N under and
-    0.3 N over should look like equal and opposite errors, not different
-    amounts of wrong.
-
-    in_band_half_width_n is separate from full_scale_n: full_scale_n is
-    where the *colour* saturates (blue or red), whereas in_band_half_width_n
-    is the narrower window that counts as "on target" for the per-trial
-    force_in_band_fraction statistic. Left unset, it defaults to 30% of
-    full_scale_n - close enough to green to be a meaningful "on target"
-    claim without being so strict that ordinary hand tremor fails it.
+    full_scale_n is where the colour saturates; in_band_half_width_n is the
+    narrower "on target" window for force_in_band_fraction, defaulting to
+    30% of full_scale_n if unset.
     """
 
     target_n: float
@@ -82,11 +60,7 @@ def _lerp_hex(low: str, high: str, fraction: float) -> str:
 
 
 def force_color(force_n: Optional[float], bands: ForceBands) -> str:
-    """Fill colour for the given force: blue (light) - green (on target) - red (heavy).
-
-    None means no contact, which is a distinct state from "zero force" and
-    gets its own neutral colour rather than reading as either extreme.
-    """
+    """Fill colour: blue (light) - green (on target) - red (heavy). None = no contact."""
     if force_n is None:
         return theme.FORCE_UNKNOWN
 
@@ -97,12 +71,7 @@ def force_color(force_n: Optional[float], bands: ForceBands) -> str:
 
 
 def force_border_px(force_n: Optional[float], bands: ForceBands) -> float:
-    """Marker border width: thin on target, thick at full-scale error.
-
-    A second channel carrying the same information as the colour, so the
-    feedback does not rely on colour discrimination at all - only on
-    noticing the marker's outline getting heavier.
-    """
+    """Marker border width: thin on target, thick at full-scale error."""
     if force_n is None:
         return theme.FORCE_BORDER_MIN_PX
 
@@ -112,13 +81,7 @@ def force_border_px(force_n: Optional[float], bands: ForceBands) -> float:
 
 
 class ForceSmoother:
-    """Short moving average, to keep the feedback from flickering.
-
-    A raw force signal jittering across a band edge would flip the colour
-    back and forth many times a second, which reads as noise rather than
-    feedback. Averaging over a short window (tens of milliseconds) removes
-    that without adding lag a participant would notice.
-    """
+    """Short moving average, to keep the feedback from flickering."""
 
     def __init__(self, window_samples: int = 5):
         if window_samples < 1:
@@ -128,12 +91,7 @@ class ForceSmoother:
         self._values: list = []
 
     def add(self, force_n: Optional[float]) -> Optional[float]:
-        """Feed one reading, get back the smoothed value.
-
-        None resets the average immediately rather than being smoothed
-        through: "finger lifted" must show up at once, not fade in over the
-        window like a change in force would.
-        """
+        """Feed one reading, get back the smoothed value. None resets immediately."""
         if force_n is None:
             self._values.clear()
             return None
@@ -148,12 +106,7 @@ class ForceSmoother:
 
 @dataclass(frozen=True)
 class ForceTrialStats:
-    """Force summary for one trial, ready to drop straight into TrialResult.
-
-    mean_n and std_n are None when no contact was ever detected during the
-    collection window - a trial with no force data should not silently read
-    as "zero force", which is a specific and different claim.
-    """
+    """Force summary for one trial. mean_n/std_n are None if no contact was detected."""
 
     mean_n: Optional[float]
     std_n: Optional[float]
@@ -163,18 +116,7 @@ class ForceTrialStats:
 
 
 class ForceTrialAccumulator:
-    """Collects force readings over one trial and summarises them at the end.
-
-    Polled at the same 20 Hz cadence SpeedEstimator uses for position, and
-    for the same reason: the raw signal is read far more often than any
-    number needs to be displayed or logged, so the accumulator's job is to
-    turn "many readings during this trial" into the handful of numbers a CSV
-    row can hold.
-
-    Readings are collected raw, not the smoothed values shown on screen -
-    the on-screen colour is deliberately lagged to avoid flicker, but the
-    logged mean and spread should describe what the sensor actually saw.
-    """
+    """Collects raw (unsmoothed) force readings over one trial and summarises them."""
 
     def __init__(self, bands: ForceBands):
         self._bands = bands
@@ -217,12 +159,8 @@ class ForceTrialAccumulator:
 
 
 def force_stats_from_samples(forces_n: np.ndarray, bands: ForceBands) -> ForceTrialStats:
-    """Exact per-trial stats from a full sample array (e.g. a ring-buffer
-    window cut for this trial), rather than ForceTrialAccumulator's online
-    summary of sparse 20 Hz polling. Every sample here is contact - unlike
-    the accumulator, there is no "no contact" reading to filter out, since
-    the window is a slice of a continuous DAQ stream, not touch events.
-    """
+    """Per-trial stats from a full sample array (e.g. a ring-buffer window),
+    rather than ForceTrialAccumulator's online summary of sparse polling."""
     n = forces_n.shape[0]
     if n == 0:
         return ForceTrialStats(

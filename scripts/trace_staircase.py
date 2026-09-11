@@ -1,9 +1,7 @@
 """Print the expected staircase trajectory for a noiseless observer.
 
-Produces a reference trace to check a manual GUI session against. The observer
-is deterministic - always correct at or above the threshold, always wrong below -
-so this exercises the staircase bookkeeping (step schedule, reversal detection,
-threshold estimation) rather than any model of human performance.
+The observer is deterministic - always correct at or above the threshold,
+always wrong below - to exercise the staircase bookkeeping in isolation.
 """
 
 from pathlib import Path
@@ -12,7 +10,7 @@ import yaml
 
 from evexp.psychophysics.staircase import StaircaseConfig, StaircaseController
 
-TRUE_THRESHOLD_V = 60.0
+TRUE_THRESHOLD_V = 1.2
 CONFIG_PATH = Path(__file__).resolve().parents[1] / "config" / "experiment.yaml"
 
 

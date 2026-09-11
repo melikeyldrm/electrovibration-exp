@@ -51,9 +51,8 @@ class RingBuffer:
     """Fixed-capacity circular store for multi-channel samples.
 
     A window onto the recent past, not the session record - old data is
-    overwritten without ceremony. Absolute sample indices are tracked so a
-    stretch can be addressed by when it happened, not where it landed,
-    which is what cutting a trial out of it needs.
+    overwritten. Absolute sample indices are tracked so a stretch can be
+    addressed by when it happened, not where it landed.
     """
 
     def __init__(self, n_channels: int, capacity_samples: int):
@@ -205,12 +204,7 @@ class SensorAcquisition:
         self._thread.start()
 
     def stop(self, timeout_s: Optional[float] = None) -> None:
-        """Ask the worker to finish, wait for it, then release the device.
-
-        Joined with a timeout rather than indefinitely: a device read that
-        never returns must not stop the application from closing. The thread
-        is a daemon, so a stuck one dies with the process.
-        """
+        """Ask the worker to finish, wait for it, then release the device."""
         self._stop.set()
         thread, self._thread = self._thread, None
         if thread is not None and thread.is_alive():
@@ -296,9 +290,8 @@ class SensorAcquisition:
     def window(self, t_start: float, t_end: float) -> np.ndarray:
         """Samples acquired between two host timestamps.
 
-        Used to cut one trial's worth of signal out of the stream after the
-        fact. Returns an empty array if that stretch has already scrolled
-        out of the buffer, rather than the nearest data it still has.
+        Returns an empty array if that stretch has already scrolled out of
+        the buffer, rather than the nearest data it still has.
         """
         with self._lock:
             if self._ring is None or self._sample_rate_hz <= 0:

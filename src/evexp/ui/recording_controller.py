@@ -1,14 +1,7 @@
 """Cuts and writes per-trial raw signal windows from the acquisition ring buffer.
 
-Split out from SessionController because raw recording needs the
-acquisition ring buffer and a force calibration, neither of which the rest
-of session orchestration (trial progression, force feedback, logging) has
-any business knowing about.
-
-Each interval is cut from the ring buffer as soon as it is safely complete,
-not when the participant responds: the buffer holds ~30 s, and a participant
-is free to take as long as they like to answer, so a response-triggered cut
-silently loses interval 1 on slow trials.
+Each interval is cut as soon as it is safely complete, not when the
+participant responds, since the ring buffer holds only ~30 s.
 """
 
 import time
@@ -34,8 +27,7 @@ class RecordingController:
     """Captures each interval as it completes, then writes both to one CSV.
 
     All three of acquisition/raw_writer/force_calibration are required
-    together; missing any one simply disables raw recording (`enabled`
-    stays False), rather than half-recording.
+    together; missing any one disables raw recording (`enabled` stays False).
     """
 
     def __init__(
@@ -63,8 +55,7 @@ class RecordingController:
         self._capture2: Optional[IntervalCapture] = None
 
     def mark_interval1_start(self) -> None:
-        # New trial begins here: drop any captures left from the previous
-        # one, so a failed capture cannot be written twice.
+        # Drop any captures left from the previous trial.
         self._capture1 = None
         self._capture2 = None
         self._interval1_start_perf = time.perf_counter()
@@ -74,9 +65,8 @@ class RecordingController:
 
     def mark_interval2_start(self) -> None:
         self._interval2_start_perf = time.perf_counter()
-        # Interval 1 is cut here rather than at its own end mark: the gap
-        # and pre-interval wait have passed, so every sample of it has
-        # certainly reached the ring buffer by now.
+        # Interval 1 is cut here, once the gap has passed and every sample
+        # of it has certainly reached the ring buffer.
         self._capture1 = self._capture(
             self._interval1_start_perf, self._interval1_end_perf, "interval 1")
 
@@ -84,13 +74,8 @@ class RecordingController:
         self._interval2_end_perf = time.perf_counter()
 
     def capture_interval2(self) -> None:
-        """Cut interval 2. Call shortly after mark_interval2_end().
-
-        Not called from mark_interval2_end() directly: the acquisition
-        thread reads in ~50 ms chunks, so the tail of the interval has not
-        reached the ring buffer at the instant the interval ends. A short
-        delay costs nothing and keeps the cut independent of response time.
-        """
+        """Cut interval 2. Call shortly after mark_interval2_end(), once the
+        tail of the interval has reached the ring buffer."""
         self._capture2 = self._capture(
             self._interval2_start_perf, self._interval2_end_perf, "interval 2")
 
@@ -105,8 +90,6 @@ class RecordingController:
                           "overrun or acquisition not running)")
                 return None
             channels = self._acquisition.channels
-            # Both sensors' gauges, FS1 first - the order DualForceCalibration
-            # expects when it splits the block back into two.
             gauge_indices = [channels.index(name) for name in ALL_GAUGE_CHANNELS]
             current = (block[channels.index("current"), :]
                        if "current" in channels else None)
@@ -125,9 +108,8 @@ class RecordingController:
     def write_trial(self, result) -> None:
         """Write both captured intervals to one CSV file.
 
-        No-op if recording is not enabled. Best-effort otherwise: a failure
-        here must not stop the trial loop or lose the CSV row that follows,
-        so errors are logged and swallowed.
+        No-op if recording is not enabled. Best-effort otherwise: errors
+        are logged and swallowed rather than stopping the trial loop.
         """
         if not self.enabled:
             return
@@ -138,10 +120,8 @@ class RecordingController:
                       f"interval {'/'.join(missing)} not captured")
             return
         try:
-            # Force stats summarise the stimulus-carrying interval only -
-            # that is the one whose contact quality the trial depends on.
-            # Exact stats from the same samples as the raw write, not the
-            # sparse 20 Hz poll SessionController's accumulator uses.
+            # Force stats summarise the stimulus-carrying interval only,
+            # from the same samples as the raw write.
             if self._force_bands is not None:
                 stim = (self._capture1 if result.stimulus_interval == 1
                         else self._capture2)

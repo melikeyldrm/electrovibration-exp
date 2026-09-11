@@ -1,20 +1,4 @@
-"""Friendly wrappers around nidaqmx.DaqError for common failure modes.
-
-nidaqmx.DaqError carries an NI-DAQmx error code but is otherwise one flat
-exception type - catching it alone tells a caller only "something went
-wrong with the DAQ", the same for a disconnected cable, a full buffer, or a
-typo in a channel name. This module maps the handful of error codes that
-actually come up in this lab (disconnection, device already in use, buffer
-overflow, timeout, bad channel name) to specific exception classes with an
-actionable message, so callers can catch DaqBufferOverflowError
-specifically and, say, suggest lowering the sample rate, rather than
-printing a bare NI-DAQmx status code.
-
-Unmapped codes are not hidden: they fall back to the generic
-DaqCommunicationError with the original message intact. This table is
-deliberately small and grows as new codes are actually seen in the lab,
-rather than trying to pre-empt every one of NI-DAQmx's ~800 error codes.
-"""
+"""Friendly wrappers around nidaqmx.DaqError for common failure modes."""
 
 from typing import Optional
 
@@ -43,8 +27,6 @@ class DaqChannelError(DaqCommunicationError):
     """A channel name or specification is invalid for this device."""
 
 # NI-DAQmx error_code -> (exception class, human-readable explanation).
-# Codes from nidaqmx.error_codes.DAQmxErrors; see that module for the full
-# list if a new code needs adding here.
 _KNOWN_CODES = {
     -50300: (DaqDeviceNotFoundError,
              "device not found - check the USB/PCIe connection and that it "
@@ -70,11 +52,7 @@ _KNOWN_CODES = {
 
 def translate_daq_error(exc: Exception,
                          device: Optional[str] = None) -> DaqCommunicationError:
-    """Wrap a nidaqmx.DaqError in a specific, actionable exception.
-
-    device, if given, is folded into the message so a multi-device session
-    doesn't leave you guessing which one failed.
-    """
+    """Wrap a nidaqmx.DaqError in a specific, actionable exception."""
     code = getattr(exc, "error_code", None)
     entry = _KNOWN_CODES.get(code)
     device_note = f" ({device})" if device else ""

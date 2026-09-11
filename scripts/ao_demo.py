@@ -1,10 +1,5 @@
 """AO (stimulus output) demo against a real or NI MAX simulated card.
 
-Exercises NiDaqDevice's StimulusOutput side end to end: opening the AO task,
-writing the sine buffer, rewriting it on amplitude change, and stopping.
-Also demonstrates that the safety check rejects an over-limit amplitude
-before anything reaches the DAQmx write call.
-
 Run with e.g.:
     python scripts/ao_demo.py --device-name Dev1
 """

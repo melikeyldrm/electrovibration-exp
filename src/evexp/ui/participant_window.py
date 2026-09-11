@@ -1,19 +1,10 @@
 """Fullscreen window shown to the participant.
 
-Deliberately minimal: the participant must not see applied voltage, which
-interval carried the stimulus, correctness, or numeric finger speed - all
-of that lives in the experimenter window on a separate screen so it doesn't
-compete with the perceptual task. The one thing shown indirectly is applied
-force, as the fill colour/border of the participant's own position marker -
-feedback about their own present action, not a result to interpret.
-
-No keyboard shortcut closes this window; ending a session is the
-experimenter's call from the console, so a stray Escape can't truncate a
-session mid-staircase.
-
-All geometry is specified in millimetres and converted to pixels through a
-ScreenCalibration at draw time, so the cue track is the same physical
-length and speed regardless of the window it's drawn in.
+Shows no applied voltage, stimulus interval, correctness, or numeric
+speed - those live in the experimenter window. Applied force is shown
+indirectly, as the fill colour/border of the participant's own marker.
+All geometry is specified in millimetres and converted to pixels through
+a ScreenCalibration at draw time.
 """
 
 import math
@@ -35,28 +26,11 @@ from evexp.ui import theme
 class CueTrack(QWidget):
     """Pacing cue plus the participant's own tracked position.
 
-    Two markers share one track: a circle at fixed physical speed (the pace
-    to match) and a square showing where the finger actually is. The gap
-    between them *is* the speed feedback - no numeric readout needed - and
-    the two differ in shape and hue so they stay distinguishable without
-    relying on colour discrimination.
-
-    The square's fill/border additionally carry force feedback: blue (too
-    light) through green (on target) to red (too hard), with border
-    thickness scaling by distance from target regardless of colour.
-
-    A single one-way sweep: the cue starts at the start marker and travels
-    at cue_speed_mm_s until the far end, at which point the interval ends
-    (TrialTiming.interval_s = travel_mm / cue_speed_mm_s). No return leg.
-
-    Before the sweep starts (show_track_only(), the pre-interval countdown),
-    the circle stays fixed at the start point instead of disappearing - a
-    stationary target the participant aligns their fingertip to before the
-    interval begins.
-
-    Position and force are both fed externally - today from the mouse and a
-    simulated/manual source; nothing here changes once the Neonode and
-    Nano17 are wired up.
+    A circle paces at fixed physical speed; a square shows where the
+    finger actually is, with fill/border carrying force feedback: blue
+    (too light) through green (on target) to red (too hard). A single
+    one-way sweep from the start marker to the far end
+    (TrialTiming.interval_s = travel_mm / cue_speed_mm_s); no return leg.
     """
 
     FRAME_INTERVAL_MS = 16    # ~60 fps
@@ -100,10 +74,8 @@ class CueTrack(QWidget):
     def _track_length_px(self) -> float:
         """Length of the track on screen, honouring the calibration.
 
-        Falls back to the available width if the window is too narrow to hold
-        the full physical travel. That fallback breaks the calibration, so it
-        warns once rather than failing silently: a session run in a too-small
-        window would otherwise record speeds that are quietly wrong.
+        Falls back to the available width if the window is too narrow, and
+        warns once since that breaks the calibration.
         """
         wanted = self._cal.mm_to_px_x(self._travel_mm)
         available = self.width() - 2 * self.MIN_MARGIN_PX
@@ -123,12 +95,7 @@ class CueTrack(QWidget):
         return wanted
 
     def _effective_mm_per_px(self) -> float:
-        """mm per pixel actually in force along the track.
-
-        Equal to the calibration whenever the track fits, which is the only
-        case that produces valid data; using the drawn length keeps the
-        display self-consistent in the degraded case too.
-        """
+        """mm per pixel actually in force along the track."""
         return self._travel_mm / self._track_length_px()
 
     def _track_bounds(self) -> tuple[float, float, float]:
@@ -150,12 +117,7 @@ class CueTrack(QWidget):
     # --- phase control -----------------------------------------------------
 
     def show_track_only(self) -> None:
-        """Show the track, start marker and the participant's own marker, but
-        no moving cue.
-
-        Used during the pre-interval wait so the participant can settle their
-        fingertip on the start position before the interval begins.
-        """
+        """Show the track and both markers, but no moving cue."""
         self._running = False
         self._timer.stop()
         self._cue_mm = 0.0
@@ -181,14 +143,7 @@ class CueTrack(QWidget):
         self.update()
 
     def _cue_position_mm(self, elapsed_s: float) -> float:
-        """Cue position for a constant-speed one-way sweep.
-
-        Linear in elapsed time, clamped to the track length. The clamp is a
-        safety net for frame-timing jitter near the end of the interval
-        (interval_s is set to exactly travel_mm / cue_speed_mm_s upstream,
-        so the cue should reach the far end just as the interval ends, not
-        before) - it is not meant to hide a real mismatch between the two.
-        """
+        """Cue position for a constant-speed one-way sweep, clamped to the track length."""
         if self._cue_speed_mm_s <= 0 or self._travel_mm <= 0:
             return 0.0
         return min(self._travel_mm, elapsed_s * self._cue_speed_mm_s)
@@ -205,13 +160,7 @@ class CueTrack(QWidget):
     # --- position input ----------------------------------------------------
 
     def mouseMoveEvent(self, event) -> None:
-        """Feed pointer position into the position and (if manual) force sources.
-
-        Only ManualPositionSource/ManualForceSource have push(); a real
-        sensor source produces its own samples and ignores the mouse. Force
-        is driven by pointer vertical position (up = more) purely so the
-        feedback colours can be exercised deliberately during development.
-        """
+        """Feed pointer position into the position and (if manual) force sources."""
         if self._track_visible:
             push_position = getattr(self._position_source, "push", None)
             if push_position is not None:
@@ -223,13 +172,7 @@ class CueTrack(QWidget):
         super().mouseMoveEvent(event)
 
     def _force_from_pointer_y(self, y_px: float) -> float:
-        """Map vertical pointer position to a force for manual driving.
-
-        Top of the widget is the highest force the scale shows meaningfully
-        (target plus twice the full-scale distance, i.e. solidly past
-        saturated red); bottom is zero. Purely a development convenience -
-        it has no physical meaning once a real sensor is in use.
-        """
+        """Map vertical pointer position to a force for manual driving."""
         span = max(1.0, float(self.height()))
         fraction = 1.0 - min(1.0, max(0.0, y_px / span))
         max_force = self._force_bands.target_n + 2.0 * self._force_bands.full_scale_n
@@ -258,13 +201,8 @@ class CueTrack(QWidget):
                             Qt.SolidLine, Qt.RoundCap))
         painter.drawLine(int(x0), int(y), int(x1), int(y))
 
-        # Pacing cue (circle) - drawn before the participant's marker so
-        # that the marker stays visible when the two overlap, which is
-        # exactly when the participant is on pace and most needs to be able
-        # to tell. While an interval is running this is the moving cue,
-        # travelling at cue_speed_mm_s; before it starts (during the
-        # pre-interval countdown), it stays fixed at the start point instead,
-        # so the participant has a clear target to align their fingertip to.
+        # Pacing cue (circle), drawn before the participant's marker so the
+        # marker stays visible when the two overlap.
         painter.setPen(Qt.NoPen)
         painter.setBrush(QColor(theme.CURSOR))
         cue_x_mm = self._cue_mm if self._running else 0.0
@@ -272,10 +210,7 @@ class CueTrack(QWidget):
                             theme.CURSOR_RADIUS_PX,
                             theme.CURSOR_RADIUS_PX)
 
-        # Participant's finger position (square), on top. Fill and border
-        # carry force feedback; position comes from the position source
-        # independently of it, so a working position source with no force
-        # source yet still draws a marker, just an uncoloured one.
+        # Participant's finger position (square), on top; fill/border carry force feedback.
         if self._position_source is not None:
             sample = self._position_source.read()
             if sample is not None:
@@ -302,20 +237,12 @@ class CueTrack(QWidget):
 class ParticipantWindow(QWidget):
     """Participant-facing display and keyboard input.
 
-    Key handling is gated by an input mode, not accepted at all times, so a
-    stray keypress during an interval can't desynchronise the trial state
-    machine. Fixed-height text areas keep the track at a constant screen
-    position through every phase - the participant is touching the screen,
-    so drift as text length changes would be worse than cosmetic.
+    Key handling is gated by an input mode so a stray keypress during an
+    interval can't desynchronise the trial state machine.
     """
 
     COUNTDOWN_TICK_MS = 100
 
-    # Qt signals (a typed event this widget can emit; other code "connects"
-    # a function to it and gets called when it fires) - this is how the
-    # window tells the rest of the app "space was pressed" or "the
-    # participant answered 1/2" without those callers needing to know about
-    # key codes.
     startRequested = pyqtSignal()
     responseGiven = pyqtSignal(int)
 
@@ -339,8 +266,7 @@ class ParticipantWindow(QWidget):
                                     theme.FONT_SIZE_LARGE, QFont.Medium))
         self._message.setStyleSheet(f"color: {theme.TEXT_PRIMARY};")
 
-        # Shows the pre-interval countdown, then the interval number. One
-        # widget for both so the digit never moves between the two.
+        # Shows the pre-interval countdown, then the interval number.
         self._numeral = QLabel("", self)
         self._numeral.setAlignment(Qt.AlignCenter)
         self._numeral.setFixedHeight(theme.NUMERAL_AREA_HEIGHT_PX)
@@ -391,8 +317,6 @@ class ParticipantWindow(QWidget):
             self._countdown_timer.stop()
             self._numeral.setText("")
             return
-        # Ceiling, so the last visible digit is 1 rather than 0: the interval
-        # begins the moment the count would reach zero.
         self._numeral.setText(str(math.ceil(remaining)))
 
     # --- phase screens -----------------------------------------------------
@@ -406,12 +330,7 @@ class ParticipantWindow(QWidget):
         self._hint.setText("Press SPACE to start the next trial")
 
     def show_pre_interval_wait(self, number: int, duration_s: float) -> None:
-        """Wait screen shown before *each* interval, per protocol.
-
-        The track and the participant's marker are visible so they can settle
-        their fingertip on the start marker; a countdown tells them exactly
-        when the interval begins, so the first stroke isn't rushed.
-        """
+        """Wait screen shown before each interval, with a countdown."""
         self._input_mode = None
         self._message.setText(f"Interval {number} starting")
         self._hint.setText("Place your fingertip on the start marker")

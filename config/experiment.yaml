@@ -1,8 +1,4 @@
 # Configuration for exp01: 2AFC absolute detection threshold for electrovibration.
-# Trial structure follows Vardar & Kuchenbecker (2021) for the base 2AFC paradigm;
-# the staircase rule (dB-domain 3-down/1-up), interval timing, and voltage safety
-# ceiling follow the protocol supplied by Umut, based on Vuik/Pool/Kenanoglu/Vardar
-# 2024/2025 (Impact of Whole-Body Vibrations on Electrovibration Perception).
 
 session:
   experiment_id: exp01_2afc_threshold
@@ -10,58 +6,29 @@ session:
   output_dir: data
 
 display:
-  # Physical calibration of the participant display. Everything the
-  # participant sees is laid out in millimetres and converted to pixels
-  # through these numbers, so that the cue track is the same physical length
-  # and the pacing cue the same physical speed in any window.
-  #
+  # Physical calibration of the participant display, in millimetres.
   # CURRENTLY SET FOR THE DEV LAPTOP, NOT THE DEPLOYMENT SCREEN.
-  # Dev laptop: 2560x1600 physical panel, 15.6", 336.0x210.0 mm.
-  # Windows display scale is set to 150%, but this Qt build renders in raw
-  # PHYSICAL pixels rather than OS-scaled logical ones (confirmed empirically:
-  # a 100 mm track measured ~67 mm on screen at the 1707x1067 logical-px
-  # setting, off by almost exactly the 1.5x scale factor) - so screen_width_px
-  # / screen_height_px below are the physical resolution, not screen_width_px
-  # / logical_scale. If this ever changes (Qt version, DPI-awareness manifest,
-  # AA_EnableHighDpiScaling), re-measure with a ruler rather than assuming.
+  # screen_width_px/height_px are physical resolution, not OS-scaled logical
+  # pixels (this Qt build renders in physical pixels).
   #
-  # These numbers are only for iterating on the UI locally; a real session
-  # must use the 3M capacitive touchscreen's own measurements instead.
-  #
-  # TODO before any real session: MEASURE the 3M touchscreen. Put a ruler
-  # against its ACTIVE (lit) area - not the bezel - record width/height in
-  # mm, and use the resolution Windows reports for that display. Re-check
-  # the physical-vs-logical pixel question there too, the same way: draw a
-  # known distance and measure it, rather than assuming.
-  #
-  # Do not substitute Qt's reported DPI: on Windows it usually returns the
-  # logical 96 DPI, which yields a plausible-looking but incorrect calibration.
+  # TODO before any real session: measure the 3M touchscreen's active area
+  # and use the resolution Windows reports for that display.
   screen_width_px: 2560
   screen_height_px: 1600
   screen_width_mm: 336.0
   screen_height_mm: 210.0
-  # Run the participant window fullscreen. Set to true for real sessions: a
-  # resized window narrower than the physical travel distance forces the
-  # track to be shrunk to fit, which breaks the calibration. Left false
-  # during development so the experimenter console stays reachable.
+  # Run the participant window fullscreen. Set true for real sessions.
   fullscreen: false
   # Which physical monitor the participant window opens on, by index into
-  # QApplication.screens() (0 = primary). Leave empty/null to use whatever
-  # screen the window happens to open on by default (usually the primary
-  # one) - fine for single-monitor development, but for a real session with
-  # two monitors this MUST be set so the participant window lands on the
-  # touchscreen and not the experimenter's monitor. Run with --list-screens
-  # to see the index/geometry of each connected screen before setting this.
+  # QApplication.screens() (0 = primary). Must be set for a real two-monitor
+  # session; run with --list-screens to see indices.
   participant_screen_index:
 
 staircase:
-  # 3-down/1-up (Levitt 1971), targeting ~79.4% correct.
+  # 3-down/1-up, targeting ~79.4% correct.
   # "3 correct" need not be consecutive - see consecutive_required below.
   rule: 3down1up
-  domain: db  # step_sizes are interpreted as dB steps (20*log10(Vp)), not volts.
-  # DAQ output starts at the safety ceiling and steps DOWN from there as the
-  # participant answers correctly - matches "50 V ceiling, decrease on correct"
-  # protocol structure, scaled here to our 2V DAQ-side ceiling (amplifier x50).
+  domain: db
   start_value: 2.0
   # dB. Index advances on every reversal and saturates on the last entry:
   # 5 dB steps until the first reversal, then 1 dB for the rest of the session.
@@ -78,93 +45,64 @@ staircase:
   # the participant isn't perceiving the max deliverable stimulus, continuing
   # wastes their time.
   max_consecutive_wrong_at_ceiling: 3
-  # "gave three correct answers (not necessarily consecutive)": a wrong answer
-  # triggers an immediate up-step but does NOT reset the cumulative correct
-  # counter. Set to true to restore classic Levitt (correct streak must be
-  # consecutive) - no code change needed, only this flag.
+  # If false, a wrong answer steps up but does not reset the correct streak
+  # (the 3 correct need not be consecutive). Set true to require consecutive.
   consecutive_required: false
   require_fine_stage_reversals: true
 
 timing:
-  # "Place your finger" wait screen, shown before EACH interval (both red and
-  # green), not just once per trial.
+  # "Place your finger" wait screen, shown before each interval.
   pre_interval_wait_s: 3.0
-  # Gap between interval 1 and interval 2. Left empty, it scales with speed
-  # the same way interval_s does (cursor_travel_mm / cursor_speed_mm_s) -
-  # mirrors how long a real stage would take to return. Set a number here to
-  # pin it back to a fixed gap regardless of speed condition.
+  # Gap between interval 1 and 2. Left empty, scales with speed the same
+  # way interval_s does. Set a number here to pin it to a fixed gap.
   gap_s_override:
-  # Track is now a single one-way sweep (not out-and-back), so interval_s is
-  # no longer set here - it is derived as cursor_travel_mm / cursor_speed_mm_s
-  # (see TrialTiming.interval_s in psychophysics/trial.py) and is therefore
-  # NOT independent of the speed condition. At 50 mm/s over 100 mm this is a
-  # 2.0 s interval; at 20 mm/s it is 5.0 s; at 80 mm/s it is 1.25 s.
+  # interval_s is derived as cursor_travel_mm / cursor_speed_mm_s (see
+  # TrialTiming.interval_s), so it depends on the speed condition.
   cursor_speed_mm_s: 50.0
   cursor_travel_mm: 100.0
-  # Speed conditions offered in the setup dialog. Free-text entry is
-  # deliberately not allowed: the conditions are fixed by the protocol, so
-  # any other value is a typo, and a typo here is invisible until analysis.
+  # Speed conditions offered in the setup dialog; fixed by the protocol.
   speed_options_mm_s: [20.0, 50.0, 80.0]
 
 force:
-  # Target normal force and the feedback colour scale around it. The
-  # participant's position marker is blue below the band, green inside it,
-  # red above it; full_scale_n is the distance from target at which the
-  # colour is fully saturated (blue or red), not a hard cutoff.
+  # Target normal force and the feedback colour scale around it: blue below
+  # the band, green inside it, red above; full_scale_n is where the colour
+  # saturates, not a hard cutoff.
   target_n: 1.0
-  # Force conditions offered in the setup dialog, same idea as
-  # timing.speed_options_mm_s: fixed by the protocol, so free-text entry
-  # is deliberately not allowed there either.
+  # Force conditions offered in the setup dialog; fixed by the protocol.
   force_levels_n: [0.5, 1.0, 1.5]
   full_scale_n: 0.5
   # Short moving average applied before colouring, in samples of the 20 Hz
-  # UI poll (5 samples = 250 ms). Without it, noise crossing a colour
-  # boundary would flicker the marker several times a second.
+  # UI poll (5 samples = 250 ms).
   smoothing_samples: 5
-  # Half-width of the "on target" band used for the force_in_band_fraction
-  # column, separate from full_scale_n (which is where the display colour
-  # saturates). Left unset it defaults to 30% of full_scale_n.
+  # Half-width of the "on target" band for force_in_band_fraction. Left
+  # unset it defaults to 30% of full_scale_n.
   in_band_half_width_n:
-  # "mouse_y" lets the experimenter drive the applied force with the
-  # mouse's vertical position during development - drag up for more force,
-  # down for less - so the feedback colours can be exercised deliberately
-  # rather than waited on. "simulated" gives a hands-off drifting signal.
-  # "nano17" reads the live normal force off the DAQ's gauge0..gauge5
-  # channels (AcquisitionForceSource, hardware/force.py) - wired in, but
-  # still reports raw volts wearing a newton label until Umut's real .cal
-  # file replaces ForceCalibration.placeholder() a few lines above this in
-  # run_gui.py.
+  # "mouse_y": experimenter drives force via pointer Y, for development.
+  # "simulated": hands-off drifting signal. "nano17": live DAQ reading,
+  # still reporting raw volts as newtons until the real .cal file replaces
+  # ForceCalibration.placeholder().
   source: mouse_y #nano17 or simulated
 
 validity:
   # A trial is discarded (not logged, not fed to the staircase, presented
-  # again at the same stimulus level) if the mean measured force or speed
-  # during the two intervals strays from target by more than this fraction.
-  # Either check is skipped if that channel has no source configured.
+  # again at the same level) if mean force/speed strays from target by more
+  # than this fraction. Skipped if that channel has no source configured.
   force_tolerance_pct: 15
   speed_tolerance_pct: 15
 
 acquisition:
-  # Continuous sensor acquisition. 10 kHz is comfortable for this setup: the
-  # signals of interest sit below ~1 kHz, the Nano17's own bandwidth is a few
-  # kHz, and six channels at 10 kHz use well under a quarter of the
-  # PCIe-6321's 250 kS/s budget. It also oversamples enough to resolve onset
-  # transients and dF/dt rather than only satisfying Nyquist.
   sample_rate_hz: 10000
-  # How much recent signal to keep in memory. Long enough to cut a whole
-  # trial out of after the fact; the session record is written separately.
+  # How much recent signal to keep in memory, to cut a trial out of after the fact.
   ring_seconds: 30
-  # Samples per device read. Left empty to derive ~50 ms from the sample
-  # rate, which keeps the read loop at a rate Python sustains comfortably.
+  # Samples per device read. Left empty to derive ~50 ms from the sample rate.
   chunk_samples:
 
 training:
   n_trials: 3
-  voltage: 2.0  # updated to match the new 2V DAQ-side scale
+  voltage: 2.0
 
 simulation:
   # Only used by the headless run; ignored once a real participant responds.
-  # NOTE: expressed in the new 0-2V DAQ scale, not the old 0-150V scale.
   true_threshold_v: 1.2
   slope: 15.0
   max_trials: 300

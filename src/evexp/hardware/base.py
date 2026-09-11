@@ -1,12 +1,4 @@
-"""Hardware interfaces: acquisition in, actuation out.
-
-Acquisition is block-oriented: at 10 kHz, Python can't service a call every
-100 us without overflowing the driver's buffer, so reads happen in blocks
-of a few hundred samples while the card's own DMA keeps timing exact.
-
-read() is a single-sample convenience wrapper over the block read, not the
-path a real session should take.
-"""
+"""Hardware interfaces: acquisition in, actuation out."""
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -14,9 +6,7 @@ from typing import Dict, Optional, Sequence, Tuple
 
 import numpy as np
 
-# A block covering roughly 50 ms. Short enough that the displayed values and
-# the trial boundaries stay responsive, long enough that the read loop runs
-# at a rate Python can sustain: 20 calls a second rather than 10,000.
+# Block size targets ~50 ms of samples, bounded to [MIN, MAX].
 CHUNK_FRACTION_OF_SECOND = 20
 MIN_CHUNK_SAMPLES = 64
 MAX_CHUNK_SAMPLES = 4096
@@ -37,19 +27,10 @@ class SensorSample:
 
 @dataclass(frozen=True)
 class SensorChunk:
-    """A block of consecutive samples across every channel.
+    """A block of consecutive samples across every channel, channels-first.
 
-    This is the basic unit of data that moves through the acquisition
-    pipeline: instead of handling one sample at a time, the code reads,
-    stores, and analyzes many samples together as a single chunk.
-
-    Stored channels-first, matching what the NI-DAQmx readers produce, so
-    that no transpose or copy is needed on the acquisition path.
-
-    t0 is a host-clock timestamp for the first sample and is only as good as
-    the host clock. Sample *spacing* comes from the card's own clock and is
-    far more precise than t0 is; anything needing exact intervals should
-    derive them from sample_rate_hz rather than from repeated timestamps.
+    t0 is a host-clock timestamp for the first sample; exact intervals
+    should be derived from sample_rate_hz, not from repeated timestamps.
     """
 
     t0: float
@@ -104,8 +85,6 @@ class SensorChunk:
 
     def latest(self) -> SensorSample:
         """The final sample of the block, as a per-channel mapping."""
-        # Used by the GUI, which only needs to display the most recent
-        # reading rather than the whole chunk.
         return SensorSample(
             timestamp=self.t_end,
             values={name: float(self.data[i, -1])
@@ -150,11 +129,7 @@ class DAQDevice(ABC):
     # --- convenience -------------------------------------------------------
 
     def read(self) -> SensorSample:
-        """One sample per channel.
-
-        Provided for scripts and probes. A session should read blocks: at
-        realistic sample rates this call cannot keep up with the device.
-        """
+        """One sample per channel. For scripts/probes; sessions should read blocks."""
         return self.read_chunk(1).latest()
 
     def default_chunk_samples(self) -> int:
@@ -169,14 +144,7 @@ class DAQDevice(ABC):
 
 
 class StimulusOutput(ABC):
-    """Abstract interface for the electrovibration stimulus output path.
-
-    Physically this is: DAQ analog output -> high-voltage amplifier -> touchscreen.
-    This is deliberately separate from DAQDevice: that interface describes
-    acquisition (reading sensors), whereas this one describes actuation
-    (emitting a signal). Keeping them apart means a real amplifier can be
-    swapped in without touching the acquisition code, and vice versa.
-    """
+    """Electrovibration stimulus path: DAQ analog output -> amplifier -> touchscreen."""
 
     @abstractmethod
     def set_amplitude(self, volts: float) -> None:

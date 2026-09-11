@@ -16,19 +16,14 @@ class StaircaseConfig:
     rule: Literal["1up2down", "3down1up"] = "1up2down"
     min_value: float = 0.0
     max_value: float = 1e9
-    # Abort the session after this many consecutive wrong answers at
-    # max_value: the participant can't detect it even at the ceiling, so
-    # continuing wastes their time. 0 disables. Vardar & Kuchenbecker 2021
-    # use 3.
+    # Abort after this many consecutive wrong answers at max_value. 0 disables.
     max_consecutive_wrong_at_ceiling: int = 5
-    # "linear": steps add/subtract directly from the value. "db": steps are
-    # applied in the dB domain (log scale, 20*log10(voltage)) then converted back
+    # "linear": steps add/subtract directly. "db": steps applied in the dB
+    # domain (20*log10(voltage)) then converted back.
     domain: Literal["linear", "db"] = "linear"
-    # If True (default), the correct-answer streak resets to 0 on any wrong
-    # answer, i.e. the required correct answers must be consecutive.
-    # If False, a wrong answer still triggers an immediate step (direction="up")
-    # but does NOT reset the correct streak — matches "not necessarily
-    # consecutive" wording in Vuik/Pool/Kenanoglu/Vardar 2024/2025.
+    # If True, the correct-answer streak resets to 0 on any wrong answer
+    # (required correct answers must be consecutive). If False, a wrong
+    # answer still steps up but does not reset the streak.
     consecutive_required: bool = True
 
     # When True, the first (len(step_sizes) - 1) reversals are a coarse-stage
@@ -146,11 +141,6 @@ class StaircaseController:
             }
         )
 
-        n_coarse_reversals_to_skip = (
-            len(self.cfg.step_sizes) - 1
-            if self.cfg.require_fine_stage_reversals
-            else 0
-        )
         if len(self.reversals) >= self.total_reversals_needed:
             self.finished = True
         return self.value

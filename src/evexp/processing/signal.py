@@ -17,11 +17,7 @@ from evexp.hardware.position import PositionSample
 
 def generate_sine_wave(frequency_hz: float, amplitude_v: float,
                         duration_s: float, sample_rate_hz: float) -> np.ndarray:
-    """Generate a sine wave sample buffer, starting at phase 0.
-
-    Starting at phase 0 keeps buffers phase-continuous when concatenated or
-    regenerated, provided duration_s covers a whole number of cycles.
-    """
+    """Generate a sine wave sample buffer, starting at phase 0."""
     if sample_rate_hz <= 0:
         raise ValueError(
             f"sample_rate_hz must be positive, got {sample_rate_hz!r}")
@@ -38,11 +34,7 @@ def generate_sine_wave(frequency_hz: float, amplitude_v: float,
 
 
 def cycles_to_duration_s(frequency_hz: float, n_cycles: int) -> float:
-    """Duration covering an exact number of cycles at frequency_hz.
-
-    Used to size a regeneration buffer so it loops without a phase jump at
-    the wrap point.
-    """
+    """Duration covering an exact number of cycles at frequency_hz."""
     if frequency_hz <= 0:
         raise ValueError(
             f"frequency_hz must be positive, got {frequency_hz!r}")
@@ -61,11 +53,7 @@ def hold_to_grid(sample_times: np.ndarray, sample_values: np.ndarray,
 
     For each target time t, returns the value of the most recent sample at
     or before t; sample_times must be sorted ascending. target_times before
-    the first sample are filled with fill_before_first (NaN by default), so
-    a gap at the very start of a trial is visible rather than backfilled
-    with data that did not exist yet. Used to align the ~200 Hz
-    position/speed stream with the 10 kHz force/AI stream so both share
-    one sample count per trial.
+    the first sample are filled with fill_before_first (NaN by default).
     """
     sample_times = np.asarray(sample_times, dtype=float)
     sample_values = np.asarray(sample_values, dtype=float)
@@ -83,8 +71,6 @@ def hold_to_grid(sample_times: np.ndarray, sample_values: np.ndarray,
     if np.any(np.diff(sample_times) < 0):
         raise ValueError("sample_times must be sorted ascending")
 
-    # searchsorted(..., side='right') - 1 gives, for each target time, the
-    # index of the last sample at or before it.
     idx = np.searchsorted(sample_times, target_times, side="right") - 1
 
     held = np.empty(target_times.shape, dtype=float)
@@ -98,12 +84,7 @@ def hold_to_grid(sample_times: np.ndarray, sample_values: np.ndarray,
 
 
 class SpeedEstimator:
-    """Estimates speed in mm/s from a short history of position samples.
-
-    A finite-difference between two adjacent samples is too noisy to
-    display, so speed is taken over a sliding window instead, which smooths
-    the reading without adding lag the experimenter would notice.
-    """
+    """Estimates speed in mm/s from a short sliding window of position samples."""
 
     def __init__(self, window_size: int = 8, stale_after_s: float = 0.3):
         self._samples: Deque[PositionSample] = deque(maxlen=window_size)
@@ -142,26 +123,14 @@ class SpeedEstimator:
 
 @dataclass(frozen=True)
 class SpeedTrialStats:
-    """Speed summary for one trial, ready to drop straight into TrialResult.
-
-    mean_mm_s is None when fewer than two position samples arrived during
-    the collection window - too little data to say anything about speed,
-    distinct from a measured speed of zero.
-    """
+    """Speed summary for one trial. mean_mm_s is None if fewer than two
+    position samples arrived (distinct from a measured speed of zero)."""
     mean_mm_s: Optional[float]
     n_samples: int
 
 
 class SpeedTrialAccumulator:
-    """Collects position readings over one trial and summarises mean speed.
-
-    Consecutive-sample finite differences, one speed estimate per pair of
-    readings, averaged at the end - the trial-level analogue of
-    SpeedEstimator's sliding window, which is tuned for a live display
-    instead. Polled at the same 20 Hz cadence as ForceTrialAccumulator, and
-    for the same reason: turn many readings into the handful of numbers a
-    CSV row can hold.
-    """
+    """Collects position readings over one trial and summarises mean speed."""
 
     def __init__(self):
         self._prev: Optional[PositionSample] = None

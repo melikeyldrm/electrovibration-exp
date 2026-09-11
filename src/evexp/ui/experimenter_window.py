@@ -1,13 +1,5 @@
-"""Experimenter-facing monitor window.
-
-Shows everything the participant must not see: applied voltage, which
-interval carried the stimulus, correctness, live staircase state, and the
-participant's live finger speed.
-
-Laid out as a console: status cards along the top, staircase trace and
-trial log in a resizable splitter below - scannable at a glance, since the
-experimenter is watching the participant, not the screen.
-"""
+"""Experimenter-facing monitor window: applied voltage, stimulus interval,
+correctness, live staircase state, and the participant's finger speed."""
 
 import math
 import time
@@ -62,11 +54,7 @@ class StatusCard(QFrame):
 class ConvergencePlot(QWidget):
     """Live staircase trace, updated after every trial.
 
-    Drawn on a log voltage axis: the staircase steps in dB, so on a linear
-    axis every step shrinks as voltage falls and the trace collapses into a
-    smear right where it matters most, near the threshold. On a log axis
-    each dB step is the same height, so reversals and convergence are
-    visible at a glance.
+    Drawn on a log voltage axis, since the staircase steps in dB.
     """
 
     PADDING_LEFT = 62
@@ -133,8 +121,6 @@ class ConvergencePlot(QWidget):
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        # Panel fill plus a hairline border, so the plot reads as a card like
-        # the status row above it rather than floating on the window.
         card = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
         painter.setPen(QPen(QColor(theme.CONSOLE_BORDER), 1))
         painter.setBrush(QColor(theme.CONSOLE_PANEL))
@@ -146,8 +132,7 @@ class ConvergencePlot(QWidget):
         top = self.PADDING_TOP
         bottom = self.height() - self.PADDING_BOTTOM
 
-        # Gridlines, labelled in volts even though the spacing is logarithmic:
-        # the experimenter thinks in the volts on the DAQ, not in dB.
+        # Gridlines, labelled in volts even though the spacing is logarithmic.
         painter.setFont(QFont(theme.CONSOLE_MONO, 8))
         for frac in (0.0, 0.25, 0.5, 0.75, 1.0):
             y = bottom - frac * (bottom - top)
@@ -183,8 +168,7 @@ class ConvergencePlot(QWidget):
                 painter.drawLine(previous, point)
             previous = point
 
-        # Markers; reversals emphasised because they are what the threshold
-        # is actually computed from.
+        # Markers; reversals emphasised.
         for i, (voltage, is_reversal) in enumerate(self._points):
             point = QPointF(self._x_for(i, n), self._y_for(voltage, lo, hi))
             painter.setPen(Qt.NoPen)
@@ -204,9 +188,7 @@ class ConvergencePlot(QWidget):
 
 
 class ExperimenterWindow(QWidget):
-    """The console window: status cards, live staircase plot, and a trial
-    log table, updated as the session runs (see update_status, add_result,
-    update_speed)."""
+    """The console window: status cards, live staircase plot, and a trial log table."""
 
     COLUMNS = ["Trial", "Voltage (V)", "Stim", "Resp",
                "Correct", "Reversal", "RT (s)"]
@@ -268,9 +250,6 @@ class ExperimenterWindow(QWidget):
                                     theme.CONSOLE_SIZE_BODY, QFont.DemiBold))
         self._message.setStyleSheet(f"color: {theme.CONSOLE_ACCENT};")
         self._message.setVisible(False)
-        # A discard reason can list problems for both intervals at once and
-        # run long - wrap it within the window instead of stretching the
-        # window to fit one line, which is what a QLabel does by default.
         self._message.setWordWrap(True)
 
         # --- plot + table ----------------------------------------------------
@@ -359,12 +338,7 @@ class ExperimenterWindow(QWidget):
         self._card_trials.set_value(str(self._n_trials))
 
     def update_speed(self, speed_mm_s: Optional[float]) -> None:
-        """Refresh the live finger-speed readout.
-
-        Pass None when no finger is detected. Deviation from target is
-        shown next to the raw value so the experimenter can judge at a
-        glance whether the participant needs correcting.
-        """
+        """Refresh the live finger-speed readout. None means no finger detected."""
         base = (f"color: %s; background-color: {theme.CONSOLE_PANEL};"
                 f"border: 1px solid {theme.CONSOLE_BORDER};"
                 f"border-radius: 4px; padding: 8px 12px;")
@@ -447,33 +421,17 @@ class ExperimenterWindow(QWidget):
         )
 
     def announce_invalid_trial(self, reason: str) -> None:
-        """Tell the experimenter a trial was discarded and will retry.
-
-        Not logged to the trial table (add_result is never called for it) -
-        this is a transient console message only, same as the other
-        _announce() calls.
-        """
+        """Tell the experimenter a trial was discarded and will retry."""
         self._announce(f"Trial discarded — {reason}", theme.CONSOLE_WARN)
 
     def announce_training_off_target(self, reason: str) -> None:
-        """Tell the experimenter a training trial was off target.
-
-        Unlike announce_invalid_trial, nothing is actually discarded or
-        retried here - training was never logged or fed to the staircase in
-        the first place, so this is purely a heads-up the experimenter can
-        use to correct the participant before the recorded session starts.
-        Wording deliberately avoids "discarded", which would be untrue.
-        """
+        """Tell the experimenter a training trial was off target (not discarded)."""
         self._announce(f"Training off target — {reason}", theme.CONSOLE_WARN)
 
     # --- input -------------------------------------------------------------
 
     def keyPressEvent(self, event) -> None:
-        """Escape ends the session, with confirmation.
-
-        Lives here rather than on the participant window so a participant
-        leaning on the keyboard can't truncate a session mid-staircase.
-        """
+        """Escape ends the session, with confirmation."""
         if event.key() != Qt.Key_Escape:
             super().keyPressEvent(event)
             return

@@ -1,10 +1,4 @@
-"""Development-only PositionSource/ForceSource implementations.
-
-Not backed by real hardware: mouse-driven or synthetic. Safe to delete once
-the Neonode and ATI Nano17 are fully wired up and calibrated - nothing else
-in the codebase depends on these classes directly, only on the
-PositionSource / ForceSource interfaces they implement.
-"""
+"""Development-only PositionSource/ForceSource implementations (mouse-driven or synthetic)."""
 
 import math
 import random
@@ -19,11 +13,8 @@ from evexp.hardware.position import PositionSample, PositionSource
 class ManualPositionSource(PositionSource):
     """Position driven by whatever the UI pushes in - currently the mouse.
 
-    Written from the Qt thread and read from the acquisition thread, so the
-    stored sample is guarded by a lock (a small gate that only one thread at
-    a time can pass through, used here to stop the two threads from reading
-    and writing `_latest` at the same instant) held only long enough to swap
-    a reference.
+    Written from the Qt thread and read from the acquisition thread, so
+    access to `_latest` is guarded by a lock.
     """
 
     def __init__(self, travel_mm: float = 100.0):
@@ -63,9 +54,7 @@ class SimulatedForceSource(ForceSource):
         self._t0 = time.perf_counter()
 
     def read_normal_force(self) -> Optional[float]:
-        """Return a synthetic force reading: target_n plus a slow sine
-        drift and small random noise, so dev/testing sees something that
-        moves like a real finger contact instead of a flat constant."""
+        """target_n plus a slow sine drift and small random noise."""
         elapsed = time.perf_counter() - self._t0
         drift = self.drift_n * math.sin(2 * math.pi * elapsed / self.drift_period_s)
         return self.target_n + drift + self._rng.gauss(0.0, self.noise_n)

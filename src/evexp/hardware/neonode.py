@@ -1,25 +1,11 @@
 """Neonode NNAMC1580PCEV IR position sensor - PositionSource implementation.
 
-The sensor exposes two HID (Human Interface Device - the standard USB
-protocol used by keyboards, mice and touch panels) interfaces. The
-digitizer one carries standard touch reports but Windows reserves it as a
-system pointing device and will not let a program read it. The vendor one
-(usage page 0xFF00) carries the zForce protocol and is what this uses.
-
-That interface is a feature-report pipe rather than a stream: the host
-writes to Feature Report 1 and reads from Feature Report 2, and the sensor
-sends nothing until it has been put in detection mode and enabled. Reports
-are 257 bytes - a shorter buffer makes every read fail outright rather than
-return a short result, which is worth knowing because the failure looks
-like a broken device.
-
-The Windows HID API is called through ctypes. hidapi writes to this device
-correctly but its feature-report reads always fail here, while the same
-HidD_GetFeature call through ctypes returns the sensor's response. hidapi
-is still used to enumerate, which works fine.
-
-Coordinates arrive in units of 0.1 mm from the sensor's own origin, so the
-calibration is a fixed scale factor rather than something to measure.
+Uses the vendor HID interface (usage page 0xFF00, zForce protocol), not the
+digitizer interface, which Windows reserves as a system pointing device.
+It is a feature-report pipe: the host writes Feature Report 1 and reads
+Feature Report 2, both 257 bytes, and the sensor sends nothing until put
+in detection mode and enabled. Reads/writes go through ctypes rather than
+hidapi: hidapi's feature-report reads fail on this device.
 """
 
 import ctypes
@@ -39,18 +25,7 @@ class NeonodeConnectionError(RuntimeError):
 
 @dataclass(frozen=True)
 class NeonodeCalibration:
-    """Maps raw device units to millimetres along the travel axis.
-
-    Kept separate from ScreenCalibration (hardware/screen.py) even though
-    the shape is similar - one is a property of the touch sensor's own
-    coordinate system, the other of the monitor panel, and they are
-    calibrated independently, by different people, at different times.
-
-    The defaults reflect the protocol: the sensor reports in units of
-    0.1 mm from its own origin. Set origin_x to align the sensor's zero
-    with the start of the cue track, and negate mm_per_unit_x if the
-    sensor is mounted against the direction of travel.
-    """
+    """Maps raw device units (0.1 mm each, from the sensor's own origin) to mm."""
     mm_per_unit_x: float = 0.1
     mm_per_unit_y: float = 0.1
     origin_x: float = 0.0   # raw device units at physical x = 0
@@ -63,29 +38,19 @@ class NeonodeCalibration:
 
 
 class NeonodeTransport(ABC):
-    """The USB/HID layer, isolated so it can be swapped for a fake in tests.
-
-    Everything above this class (the thread, the parsing, the mm
-    conversion) can be developed and tested without hardware by handing
-    NeonodePositionSource a fake transport that returns canned reports.
-    """
+    """The USB/HID layer, isolated so it can be swapped for a fake in tests."""
 
     @abstractmethod
     def open(self) -> None:
-        """Enumerate and open the device. Raise NeonodeConnectionError if
-        it can't be found or claimed."""
+        """Enumerate and open the device. Raises NeonodeConnectionError on failure."""
 
     @abstractmethod
     def close(self) -> None:
-        """Release the device. Must be safe to call even if open() failed
-        or was never called."""
+        """Release the device. Safe to call even if open() failed or wasn't called."""
 
     @abstractmethod
     def read_report(self, timeout_s: float) -> Optional[bytes]:
-        """Block up to timeout_s for one report; return None on timeout.
-
-        Raise NeonodeConnectionError if the device stops responding (as
-        opposed to simply having nothing new to say)."""
+        """Block up to timeout_s for one report; return None on timeout."""
 
 
 VENDOR_ID = 0x1536
@@ -152,9 +117,7 @@ class HidNeonodeTransport(NeonodeTransport):
 
         self._hid_dll = ctypes.WinDLL("hid")
         self._kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        # Declared explicitly: the default restype is a 32-bit int, which
-        # truncates a 64-bit handle into failures that look like a fault
-        # in the device rather than in this call.
+        # Default restype is a 32-bit int, which truncates a 64-bit handle.
         self._kernel32.CreateFileW.restype = ctypes.c_void_p
 
         handle = self._kernel32.CreateFileW(
@@ -205,13 +168,7 @@ class HidNeonodeTransport(NeonodeTransport):
         return bytes(raw[2:2 + raw[1]]) if raw[1] else b""
 
     def read_report(self, timeout_s: float) -> Optional[bytes]:
-        """Poll until a message that is not a repeat of the last one.
-
-        The sensor holds its last message in the buffer, so the same one
-        reads back until a new one lands. Each notification carries a
-        timestamp, so comparing whole payloads drops repeats without also
-        dropping a finger that genuinely has not moved.
-        """
+        """Poll until a message that is not a repeat of the last one."""
         if self._handle is None:
             raise NeonodeConnectionError("read_report() called before open()")
         deadline = time.perf_counter() + timeout_s
@@ -226,11 +183,7 @@ class HidNeonodeTransport(NeonodeTransport):
 
 
 def _decode_report(report: bytes) -> Optional[Tuple[float, float]]:
-    """One notification -> (x, y) in device units, or None for no contact.
-
-    Only the first touch is used: the experiment tracks one finger, and
-    the sensor reports at most two. An up event is no contact.
-    """
+    """First touch's (x, y) in device units, or None for no contact/up event."""
     touches = _parse_touches(report)
     if not touches:
         return None
@@ -243,13 +196,9 @@ def _decode_report(report: bytes) -> Optional[Tuple[float, float]]:
 def _parse_touches(report: bytes) -> List[Tuple[int, int, int, int]]:
     """Every touch in a notification, as (id, event, x_raw, y_raw).
 
-    Each touch is a TLV (tag-length-value: a small self-describing chunk of
-    binary data - a tag byte says what it is, a length byte says how many
-    bytes follow, then the actual value): tag 0x42, a length, then id,
-    event, x, y and sizes. Scanning for the tag rather than indexing from a
-    fixed offset keeps this working whether the frame carries one touch or
-    three, and with or without the trailing timestamp - both of which vary
-    with the number of fingers and the firmware version.
+    Each touch is a TLV: tag 0x42, a length, then id, event, x, y and
+    sizes. Scanning for the tag (rather than a fixed offset) handles a
+    variable number of touches and an optional trailing timestamp.
     """
     if not report or report[0] != NOTIFICATION_FRAME:
         return []
@@ -274,13 +223,7 @@ def _parse_touches(report: bytes) -> List[Tuple[int, int, int, int]]:
 
 
 class NeonodePositionSource(PositionSource):
-    """Background thread turns a stream of device reports into read() snapshots.
-
-    Mirrors SensorAcquisition's split (hardware/acquisition.py): a worker
-    thread blocks on the transport and updates a snapshot under a lock; read()
-    only ever takes the lock briefly and never touches the transport, so it
-    stays safe to call from both a UI timer and the acquisition thread.
-    """
+    """Background thread turns a stream of device reports into read() snapshots."""
 
     def __init__(self, transport: NeonodeTransport,
                  calibration: NeonodeCalibration,
@@ -294,10 +237,7 @@ class NeonodePositionSource(PositionSource):
         self._stop_requested = threading.Event()
 
     def connect(self) -> None:
-        """Open the transport and start the background read thread.
-
-        Raises NeonodeConnectionError if the device can't be opened.
-        """
+        """Open the transport and start the background read thread."""
         self._transport.open()
         self._stop_requested.clear()
         self._thread = threading.Thread(
@@ -325,10 +265,7 @@ class NeonodePositionSource(PositionSource):
             try:
                 report = self._transport.read_report(timeout_s=0.1)
             except NeonodeConnectionError:
-                # Device dropped out mid-session. Clear the last known
-                # position rather than keep serving a stale one - "no
-                # finger detected" is the honest state here, same as
-                # ManualPositionSource.clear().
+                # Device dropped out mid-session; clear rather than serve a stale position.
                 with self._lock:
                     self._latest = None
                 break

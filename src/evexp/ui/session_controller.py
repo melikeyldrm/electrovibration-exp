@@ -1,17 +1,7 @@
 """Glue between the Trial2AFC state machine and the Qt event loop.
 
 Phase transitions are driven by a one-shot QTimer, not blocking waits, so
-the UI stays responsive and Trial2AFC itself stays Qt-free and hardware-free
-(force source, force stats, and raw recording all live here instead).
-
-A repeating timer polls position/force sources at a fixed rate and pushes
-derived finger speed to the experimenter console - polling rather than a
-callback keeps the refresh rate independent of how fast the source produces
-samples.
-
-Raw per-trial recording (RawSessionWriter) is cut and written immediately
-on response, not deferred: SensorAcquisition's ring buffer holds only ~30 s,
-so a trial cut out late is gone for good.
+Trial2AFC itself stays Qt-free and hardware-free.
 """
 
 import time
@@ -33,22 +23,16 @@ from evexp.ui.experimenter_window import ExperimenterWindow
 from evexp.ui.participant_window import ParticipantWindow
 from evexp.ui.recording_controller import RecordingController
 
-SENSOR_POLL_INTERVAL_MS = 50   # 20 Hz: fast enough to be live, slow enough to read
+SENSOR_POLL_INTERVAL_MS = 50   # 20 Hz
 
-# Maps the two "the participant is actually stroking the screen" states to
-# their interval number. Force/speed are only meaningful to summarise while
-# one of these is current - averaging in the gap, where the finger is
-# lifted, would pull the mean toward "no contact" for reasons that have
-# nothing to do with how well the participant pressed. None (not in this
-# map) means neither interval is running.
+# Maps the states where the participant is actually stroking the screen to
+# their interval number; not present means neither interval is running.
 _INTERVAL_NUMBER_BY_STATE = {TrialState.INTERVAL_1: 1, TrialState.INTERVAL_2: 2}
 
 
 class SessionController(QObject):
     """Runs a full session: drives Trial2AFC, updates both windows, and logs
-    each trial's result. This is the object that ties the trial state
-    machine, the participant/experimenter windows, sensor polling, and
-    optional raw recording together into one running experiment."""
+    each trial's result."""
 
     def __init__(
         self,
@@ -78,15 +62,12 @@ class SessionController(QObject):
         self._n_training = 0
         self._training_done = (n_training == 0)
         self._cursor_speed_mm_s = cursor_speed_mm_s
-        # None disables the corresponding validity check (no tolerance
-        # configured), rather than treating every trial as invalid.
+        # None disables the corresponding validity check.
         self._force_tolerance_pct = force_tolerance_pct
         self._speed_tolerance_pct = speed_tolerance_pct
         self._n_invalid = 0
         self._current_is_training = False
 
-        # SPACE -> _begin_trial, 1/2 keypress -> _on_response.
-        # _advance is never called directly; only QTimer fires it.
         self.participant.startRequested.connect(self._begin_trial)
         self.participant.responseGiven.connect(self._on_response)
 
@@ -94,23 +75,18 @@ class SessionController(QObject):
         self._position_source = position_source
         self._speed_estimator = SpeedEstimator()
 
-        # Per-trial force summary (both intervals combined), for the CSV
-        # columns; None if no force source was supplied, so those columns
-        # log None rather than fabricated zeros.
+        # Per-trial summaries, for the CSV columns; None if no source configured.
         self._force_source = force_source
         self._force_accumulator = (
             ForceTrialAccumulator(force_bands)
             if force_source is not None and force_bands is not None else None
         )
         self._force_bands = force_bands
-        # Per-trial measured speed, for the same CSV columns.
         self._speed_accumulator = (
             SpeedTrialAccumulator() if position_source is not None else None
         )
-        # Separate accumulators per interval, for the validity check only:
-        # a trial-wide average can hide one interval being too heavy and the
-        # other too light (or too fast/too slow) - each interval must pass
-        # tolerance on its own, not just the two combined.
+        # Separate per-interval accumulators for the validity check, so an
+        # over-target interval and an under-target one can't average out.
         self._force_accumulators_by_interval = (
             {1: ForceTrialAccumulator(force_bands), 2: ForceTrialAccumulator(force_bands)}
             if force_source is not None and force_bands is not None else None
@@ -119,13 +95,8 @@ class SessionController(QObject):
             {1: SpeedTrialAccumulator(), 2: SpeedTrialAccumulator()}
             if position_source is not None else None
         )
-        # None outside INTERVAL_1/INTERVAL_2; otherwise which one, so
-        # _poll_sensors knows which per-interval accumulator to feed.
         self._collecting_interval: Optional[int] = None
 
-        # Raw per-trial signal recording; owns the acquisition/writer/
-        # calibration dependency and the interval boundary marks (see
-        # ui/recording_controller.py for why this is split out).
         self._recording = RecordingController(
             acquisition, raw_writer, force_calibration, force_bands,
             log_fn=self._log_console)
@@ -160,22 +131,16 @@ class SessionController(QObject):
             for acc in self._speed_accumulators_by_interval.values():
                 acc.reset()
         self._collecting_interval = None
-        # Wall-clock start of the trial (not the raw-recording window
-        # boundary - see _advance() for interval1/2 start/end marks).
         self._trial_start_perf = time.perf_counter()
         duration_s = self.trial.start_trial(training=training)
         label = "Training" if training else f"trial {self.trial.trial_index }"
         self._log_console(f"\n{label}  {self.trial.applied_voltage:6.3f} V")
-        # start_trial() now enters PRE_INTERVAL_WAIT, not INTERVAL_1.
         self.participant.show_pre_interval_wait(1, duration_s)
         self._refresh_status()
         self._arm(duration_s)
 
     def _advance(self) -> None:
-        # Called only by QTimer. Steps the state machine one phase:
-        #   PRE_INTERVAL_WAIT -> INTERVAL_1 -> GAP
-        #   -> PRE_INTERVAL_WAIT -> INTERVAL_2 -> AWAITING_RESPONSE
-        # Returns None at AWAITING_RESPONSE, which has no fixed duration.
+        """Called only by QTimer. Steps the state machine one phase."""
         duration_s = self.trial.advance()
         state = self.trial.state
         self._collecting_interval = _INTERVAL_NUMBER_BY_STATE.get(state)
@@ -186,12 +151,8 @@ class SessionController(QObject):
             self._recording.mark_interval1_start()
         elif state is TrialState.GAP:
             self.participant.show_gap()
-            # GAP always follows interval_1 (interval_2 is followed by
-            # AWAITING_RESPONSE instead).
             self._recording.mark_interval1_end()
         elif state is TrialState.PRE_INTERVAL_WAIT:
-            # Only reached on the way to interval 2; the wait before
-            # interval 1 is entered by _begin_trial above.
             self.participant.show_pre_interval_wait(2, duration_s)
         elif state is TrialState.INTERVAL_2:
             self.participant.show_interval(2, duration_s)
@@ -201,9 +162,7 @@ class SessionController(QObject):
             self.participant.show_response_prompt()
             self._log_console("  -> press 1 or 2")
             self._recording.mark_interval2_end()
-            # Cut interval 2 after a short delay, not immediately: the
-            # acquisition thread reads in ~50 ms chunks, so the tail of the
-            # interval has not landed in the ring buffer yet.
+            # Delay so the tail of the interval has landed in the ring buffer.
             QTimer.singleShot(250, self._recording.capture_interval2)
 
         self._refresh_status()
@@ -213,13 +172,9 @@ class SessionController(QObject):
     def _on_response(self, response_interval: int) -> None:
         self._collecting_interval = None
 
-        # Measured before scoring, not after: validity must gate whether
-        # the staircase gets updated at all, and every accumulator finishes
-        # collecting the moment the intervals end, so the data is already
-        # available here. The trial-wide accumulators feed the CSV columns;
-        # the per-interval ones feed the validity check, so that an
-        # over-target interval 1 and an under-target interval 2 can't
-        # average out into a trial that looks fine.
+        # Measured before scoring: validity gates whether the staircase
+        # updates. Trial-wide accumulators feed the CSV; per-interval ones
+        # feed the validity check.
         force_stats = (self._force_accumulator.stats()
                       if self._force_accumulator is not None else None)
         speed_stats = (self._speed_accumulator.stats()
@@ -231,16 +186,11 @@ class SessionController(QObject):
             {i: acc.stats() for i, acc in self._speed_accumulators_by_interval.items()}
             if self._speed_accumulators_by_interval is not None else {})
         problems = self._validity_problems(force_stats_by_interval, speed_stats_by_interval)
-        # Training is never discarded/retried - it isn't logged or fed to
-        # the staircase regardless, so there's nothing to protect by
-        # discarding it. The check still runs on it (below) purely to warn
-        # the experimenter, who can correct the participant before the
-        # recorded session starts.
+        # Training is never discarded; the check still runs to warn the
+        # experimenter so they can correct the participant.
         result = self.trial.submit_response(
             response_interval, valid=(self._current_is_training or not problems))
 
-        # Filled in here rather than by Trial2AFC, since these come from
-        # hardware the trial state machine has no knowledge of.
         if force_stats is not None:
             result.mean_normal_force_n = force_stats.mean_n
             result.std_normal_force_n = force_stats.std_n
@@ -262,18 +212,11 @@ class SessionController(QObject):
             self._refresh_status()
             return
 
-        # Cut and write the raw signal window - the ring buffer holds only
-        # ~30 s, so this is the step where delay actually costs data.
-        # Training trials are skipped: not part of the collected data.
-        # write_trial() overwrites mean_normal_force_n/std/in_band_fraction
-        # above with exact stats from the ring-buffer window (more accurate
-        # than the poll-based accumulator used for the validity check) when
-        # raw recording is enabled.
+        # write_trial() overwrites the force/speed stats above with exact
+        # values from the ring-buffer window, when raw recording is enabled.
         if not result.training:
             self._recording.write_trial(result)
 
-        # Log every trial immediately so a crash mid-session still yields
-        # partial data. Training rows are included with training=True flag.
         self.logger.log(result)
 
         verdict = "correct" if result.correct else "WRONG"
@@ -315,13 +258,7 @@ class SessionController(QObject):
         self._refresh_status()
 
     def _poll_sensors(self) -> None:
-        """Sample position and force at a fixed rate.
-
-        Position feeds the live speed readout on the experimenter console.
-        Force feeds both that same console (not yet wired to show it) and,
-        while a stroke is actually in progress, the per-trial accumulator
-        that ends up in the CSV.
-        """
+        """Sample position and force at a fixed rate."""
         if self._position_source is not None:
             sample = self._position_source.read()
             self._speed_estimator.add(sample)
@@ -345,19 +282,10 @@ class SessionController(QObject):
                            speed_stats_by_interval: dict) -> list:
         """Which measured channels fell outside tolerance of target, if any.
 
-        Checked per interval, not on a trial-wide average: an interval 1
-        that ran heavy and an interval 2 that ran light can average out to
-        "on target" for the trial while both intervals were individually
-        bad, so each interval must pass tolerance on its own.
-
-        Empty list means the trial is valid. A check is skipped entirely
-        (not counted as a problem) only if its tolerance isn't configured,
-        or the channel has no source configured this session at all (the
-        stats dict has no entry for that interval). But a configured
-        channel that measured zero contact/movement during an interval -
-        stats present, mean is None - is itself a problem, not something to
-        skip: a participant who never touched the screen is the clearest
-        possible case of an invalid trial, not an unmeasured one.
+        Checked per interval, not on a trial-wide average. Empty list means
+        valid. A check is skipped only if its tolerance or source isn't
+        configured; zero contact/movement during a configured interval is
+        itself a problem, not something to skip.
         """
         problems = []
         for interval in (1, 2):
@@ -392,7 +320,6 @@ class SessionController(QObject):
 
     def _announce_interval(self, number: int) -> None:
         # Only prints when reveal_stimulus is True (debug/development mode).
-        # Never enable this during real data collection.
         marker = "  <<< STIMULUS" if self.trial.stimulus.is_active else ""
         self._log_console(f"  interval {number}{marker}")
 

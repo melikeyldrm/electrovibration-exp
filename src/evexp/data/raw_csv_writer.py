@@ -34,11 +34,8 @@ class RawTrialWriter:
 
     Filename: p<participant_id>_s<speed>_trial<index:03d>_<stamp>.csv
     Rows for interval 1 come first, then interval 2. `actuation` is 1 on
-    the interval that carried the stimulus, 0 on the other.
-
-    Both sensors are written separately (fx1.. / fx2..) alongside their sum
-    (fx/fy/fz): the sum cannot be taken apart afterwards, and a per-sensor
-    trace is what shows an unbalanced mount or a dead bridge.
+    the interval that carried the stimulus, 0 on the other. Both sensors
+    are written separately (fx1.. / fx2..) alongside their sum (fx/fy/fz).
     """
 
     COLUMNS = ("interval,time_s,fx1,fy1,fz1,fx2,fy2,fz2,fx,fy,fz,"
@@ -79,10 +76,7 @@ class RawTrialWriter:
         else:
             speed = np.full(n, np.nan)
 
-        # current_a: AI channel not wired yet. Pending confirmation of what
-        # the amplifier-side port actually measures - the 9200A datasheet
-        # describes a monitor output that divides the main output by 100
-        # (a voltage monitor), not a current output. NaN until settled.
+        # current_a: AI channel not wired yet; NaN until it is.
         current = current_chunk if current_chunk is not None else np.full(n, np.nan)
 
         return [

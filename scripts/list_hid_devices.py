@@ -1,11 +1,5 @@
 """List every HID device Windows exposes, so the Neonode can be identified.
 
-Faster and more reliable than hunting through Device Manager: this shows
-exactly what the `hid` library can see, which is the thing that actually
-matters for capture_neonode_report.py. If the sensor does not appear here
-it is not reachable as a HID device at all, and the transport has to go
-through pyusb/libusb instead.
-
 Run it twice - once with the sensor unplugged, once plugged in - and
 compare. Close Neonode Workbench first; it may hold the device open.
 """
@@ -27,8 +21,6 @@ def main() -> None:
         product = (d.get("product_string") or "").strip()
         label = " / ".join(p for p in (maker, product) if p) or "(no strings)"
         print(f"  VID={vid:#06x} PID={pid:#06x}  {label}")
-        # A composite device shows up once per interface; usage_page and
-        # interface_number are what tell those interfaces apart.
         print(f"      usage_page={d.get('usage_page')} "
               f"usage={d.get('usage')} "
               f"interface={d.get('interface_number')}")

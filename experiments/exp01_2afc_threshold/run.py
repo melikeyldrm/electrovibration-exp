@@ -27,9 +27,7 @@ def main():
     trial = Trial2AFC(
         stimulus=MockStimulusOutput(),
         staircase=staircase,
-        # Pick out only the fields TrialTiming takes: the timing block also
-        # carries speed_options_mm_s (for the GUI setup dialog), which is not
-        # a TrialTiming argument. Mirrors run_gui.py's explicit construction.
+        # timing_cfg also carries speed_options_mm_s, not a TrialTiming argument.
         timing=TrialTiming(
             pre_interval_wait_s=timing_cfg["pre_interval_wait_s"],
             gap_s_override=timing_cfg.get("gap_s_override"),

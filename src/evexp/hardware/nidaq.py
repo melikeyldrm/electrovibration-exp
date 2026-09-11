@@ -1,27 +1,8 @@
 """NI-DAQmx implementation of DAQDevice + StimulusOutput.
 
-This is the "real hardware" backend: it talks to an actual National
-Instruments DAQ (data acquisition) card through the nidaqmx driver library,
-as opposed to mock.py's simulated stand-in used for development without a
-card attached.
-
-AI (analog input - reading sensor voltages) and AO (analog output - driving
-the stimulus voltage) are two independent tasks, each with its own sample
-clock, not combined, so one doesn't block the other.
-
-Key decisions:
-- read_many_sample() into a preallocated buffer, not Task.read() per
-  sample - the latter overflows the driver buffer at 10 kHz.
-- Explicit samps_per_chan (buffer_seconds) - the DAQmx default is too small.
-- One AI task for all channels - shares a sample clock, keeps them in sync.
-- Every AO write goes through safety.check_voltage_limit first.
-- terminal_config defaults to DEFAULT (differential on the 6321), matching
-  the rig's existing acquisition code. With one sensor per card the six
-  gauges fit inside the 8-channel differential limit.
-
-One instance drives one card. The rig has three: two reading a force sensor
-each, one carrying the stimulus AO and the amplifier's monitor input. The
-force cards are joined into a single stream by multi_daq.MultiDaqDevice.
+AI (analog input) and AO (analog output) run as two independent tasks,
+each with its own sample clock, so one doesn't block the other. One
+instance drives one card; multiple cards are joined by multi_daq.py.
 """
 
 import time
@@ -44,12 +25,7 @@ def gauge_channel_map(prefix: str, first_ai: int = 0) -> dict:
 # cards - see gauge_channel_map() and multi_daq.py.
 DEFAULT_CHANNEL_MAP = gauge_channel_map("fs1")
 
-# AO (analog output - the DAQ card's outgoing signal path, here driving the
-# stimulus waveform) defaults for the electrovibration carrier.
-
-# 200 kHz sample rate: 1600 samples/cycle, within PCIe-6321's AO limit.
-# 5 cycles/buffer: previously 1000 cycles/buffer (8 s, 1.6M samples), which
-# was cut down to keep the buffer small and amplitude changes responsive.
+# AO defaults for the electrovibration carrier.
 DEFAULT_AO_CHANNEL = "ao0"
 DEFAULT_STIMULUS_FREQUENCY_HZ = 125.0
 DEFAULT_AO_SAMPLE_RATE_HZ = 200_000.0
