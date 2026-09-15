@@ -89,7 +89,7 @@ so it runs on a laptop with nothing plugged in. Useful flags:
 |---|---|
 | `--real-daq` | Use real (or NI MAX-simulated) NI-DAQmx cards instead of the mock devices, for both acquisition and the stimulus. |
 | `--daq-fs1`, `--daq-fs2`, `--daq-stim` | NI-DAQmx device names for the two force-sensor cards and the stimulus/monitor card (defaults: `Dev1`, `Dev3`, `Dev2`). Only relevant with `--real-daq`. |
-| `--monitor-channel` | AI channel on the stimulus card reading the amplifier's monitor output (default `ai0`). |
+| `--monitor-channel` | AI channel read as `current` (default `ai0`). |
 | `--neonode` | Track finger position with the Neonode IR sensor instead of the mouse; falls back to the mouse if the sensor can't be opened. |
 
 

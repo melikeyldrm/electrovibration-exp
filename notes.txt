@@ -72,10 +72,21 @@ This rig has two independent sensor paths feeding two different things:
 
 FORCE SENSOR CALIBRATION MATRICES (ATI Nano17)
 ------------------------------------------------
-File: src/evexp/hardware/force.py, lines 20-38 (GAIN_FS1, GAIN_FS2, FLIP_Y)
+File: src/evexp/hardware/force.py
 
-is_placeholder default: src/evexp/hardware/force.py:123
-(DualForceCalibration.from_gain_matrices)
+    GAIN_FS1, GAIN_FS2   6x6 gain matrices, one per ATI Nano17 sensor
+                         (rows Fx,Fy,Fz,Tx,Ty,Tz; cols = the sensor's 6 gauges)
+    FLIP_Y               mounting rotation (Y-axis sign flip), applied via
+                         DualForceCalibration.from_gain_matrices(mounting=FLIP_Y)
+
+These are the real per-sensor calibration matrices as provided - already
+in use, nothing to swap in later.
+
+NOTE: DualForceCalibration.from_gain_matrices() still defaults to
+is_placeholder=True (leftover from before these matrices were entered),
+so describe() will keep printing "PLACEHOLDER" even though real numbers
+are in use. Harmless for now, but flip that default to False whenever
+it's convenient.
 
 
 
@@ -102,18 +113,8 @@ stimulus card as "Dev4" instead of "Dev2").
     --daq-stim         card carrying BOTH the stimulus analog OUTPUT (the
                        electrovibration signal sent to the amplifier) and
                        the amplifier monitor INPUT (default: Dev2)
-    --monitor-channel  AI channel on --daq-stim that reads the amplifier's
-                       own "monitor" output, i.e. what the amplifier
-                       actually produced - not what we commanded it to
-                       produce (default: ai0). This is a feedback/QA signal:
-                       it's read back as the "current" channel
-                       (recording_controller.py) and shown live in the
-                       experimenter window so you can see the real
-                       delivered stimulus, independent of any amplifier
-                       clipping/fault/miswiring. It is NOT the stimulus
-                       output channel itself and NOT a force/position
-                       sensor - only wire it if the amplifier has a
-                       monitor/sense output to read.
+    --monitor-channel  AI channel on --daq-stim read as "current"
+                       (default: ai0).
     --neonode          use the real Neonode IR sensor for finger position
                        instead of the mouse (see TWO SEPARATE SENSING
                        SYSTEMS above). Falls back to the mouse if the
