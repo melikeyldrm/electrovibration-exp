@@ -58,11 +58,11 @@ def parse_args():
         help="NI-DAQmx device reading force sensor 1. Only with --real-daq."
     )
     parser.add_argument(
-        "--daq-fs2", default="Dev2",
+        "--daq-fs2", default="Dev3",
         help="NI-DAQmx device reading force sensor 2. Only with --real-daq."
     )
     parser.add_argument(
-        "--daq-stim", default="Dev3",
+        "--daq-stim", default="Dev2",
         help="NI-DAQmx device carrying the stimulus AO and the amplifier "
              "monitor input. Only with --real-daq."
     )
@@ -150,16 +150,20 @@ def main():
 
     if args.real_daq:
         # ao_voltage_limit_v ties the AO hardware range to the staircase ceiling.
+        # Monitor input is single-ended (RSE); the force sensor gauges are differential.
         stimulus_card = NiDaqDevice(
             device_name=args.daq_stim,
             channel_map={"current": args.monitor_channel},
+            terminal_config="RSE",
             ao_voltage_limit_v=cfg["staircase"]["max_value"],
         )
         acquisition_device = MultiDaqDevice([
             NiDaqDevice(device_name=args.daq_fs1,
-                        channel_map=gauge_channel_map("fs1")),
+                        channel_map=gauge_channel_map("fs1"),
+                        terminal_config="DIFF"),
             NiDaqDevice(device_name=args.daq_fs2,
-                        channel_map=gauge_channel_map("fs2")),
+                        channel_map=gauge_channel_map("fs2"),
+                        terminal_config="DIFF"),
             stimulus_card,
         ])
         stimulus_output = stimulus_card

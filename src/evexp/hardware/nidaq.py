@@ -117,7 +117,7 @@ class NiDaqDevice(DAQDevice, StimulusOutput):
             task.in_stream.input_buf_size = samps_per_chan
 
             self._reader = AnalogMultiChannelReader(task.in_stream)
-            # Sized in read_chunk() per call, not here - see comment there.
+            # Sized in read_chunk() per call
             self._buffer = None
 
             task.start()

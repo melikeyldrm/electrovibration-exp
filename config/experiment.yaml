@@ -7,7 +7,7 @@ session:
 
 display:
   # Physical calibration of the participant display, in millimetres.
-  # CURRENTLY SET FOR THE DEV LAPTOP, NOT THE DEPLOYMENT SCREEN.
+  #
   # screen_width_px/height_px are physical resolution, not OS-scaled logical
   # pixels (this Qt build renders in physical pixels).
   #
@@ -81,7 +81,7 @@ force:
   # "simulated": hands-off drifting signal. "nano17": live DAQ reading,
   # still reporting raw volts as newtons until the real .cal file replaces
   # ForceCalibration.placeholder().
-  source: mouse_y #nano17 or simulated
+  source: nano17 #nano17 or simulated
 
 validity:
   # A trial is discarded (not logged, not fed to the staircase, presented
@@ -108,4 +108,4 @@ simulation:
   max_trials: 300
 
 debug:
-  reveal_stimulus: true # to test
+  reveal_stimulus: false # to test

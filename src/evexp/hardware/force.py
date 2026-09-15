@@ -1,8 +1,7 @@
 """Raw gauge volts -> normal force.
 
 Two ATI Nano17s under the same plate, each with its own 6x6 matrix and
-bias; the plate's total force is the sum of the two. is_placeholder marks
-gain matrices not yet sourced from ATI's .cal files.
+bias; the plate's total force is the sum of the two. 
 """
 
 import time
@@ -17,7 +16,7 @@ FS1_GAUGE_CHANNELS: Tuple[str, ...] = tuple(f"fs1_gauge{i}" for i in range(6))
 FS2_GAUGE_CHANNELS: Tuple[str, ...] = tuple(f"fs2_gauge{i}" for i in range(6))
 ALL_GAUGE_CHANNELS: Tuple[str, ...] = FS1_GAUGE_CHANNELS + FS2_GAUGE_CHANNELS
 
-# From Setup_FS1.5.py; not read from the sensors' .cal files.
+
 GAIN_FS1 = [
     [-0.00196, -0.06523, -0.07955, -1.66690, -0.03715, 1.57517],
     [0.07846, 1.91376, -0.04191, -0.99642, 0.02254, -0.85845],
@@ -121,7 +120,7 @@ class DualForceCalibration:
     @classmethod
     def from_gain_matrices(cls, gain_fs1=GAIN_FS1, gain_fs2=GAIN_FS2,
                            mounting: np.ndarray = FLIP_Y,
-                           is_placeholder: bool = True) -> "DualForceCalibration":
+                           is_placeholder: bool = False) -> "DualForceCalibration":
         def one(gain, serial):
             return ForceCalibration(
                 matrix=np.asarray(gain, dtype=float),

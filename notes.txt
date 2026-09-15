@@ -1,0 +1,183 @@
+electrovibration-exp - quick reference 
+===========================================================
+
+WHERE TO ACTUALLY EDIT THINGS (quick lookup)
+-----------------------------------------------
+  Force calibration matrices (GAIN_FS1, GAIN_FS2, FLIP_Y)
+      -> src/evexp/hardware/force.py, lines 20-38
+  DAQ device names (Dev1/Dev2/Dev3) and monitor AI channel (ai0) defaults
+      -> experiments/exp01_2afc_threshold/run_gui.py, lines 56-73
+      (argparse --daq-fs1/--daq-fs2/--daq-stim/--monitor-channel defaults)
+  Which ai0..ai5 pin = which force gauge
+      -> src/evexp/hardware/nidaq.py, gauge_channel_map()
+  Screen size in mm / which monitor participant window opens on
+      -> config/experiment.yaml, display: section
+  Safety ceiling on stimulus voltage
+      -> config/experiment.yaml, staircase: max_value
+  Force source (real sensor vs mouse vs simulated) and target force
+      -> config/experiment.yaml, force: section
+  Trial validity tolerances (force/speed)
+      -> config/experiment.yaml, validity: section
+See the matching sections below for what each of these actually does and
+why it matters.
+
+
+HOW TO RUN
+----------
+Simulated smoke test (no hardware, no GUI - checks the pipeline still works):
+    python experiments/exp01_2afc_threshold/run.py
+
+Real/interactive session (participant + experimenter windows):
+    python experiments/exp01_2afc_threshold/run_gui.py --real-daq --neonode
+
+Without --real-daq, run_gui.py uses mock hardware; without --neonode it uses
+the mouse for finger position instead of the real sensor - useful for
+testing the UI without being at the rig.
+
+All experiment settings (staircase, trial timing, force target, display
+size, sample rate) are in one file, no code changes needed:
+    config/experiment.yaml
+
+
+TWO SEPARATE SENSING SYSTEMS 
+----------------------------------------------
+This rig has two independent sensor paths feeding two different things:
+
+1. POSITION sensor 
+   - Hardware: Neonode IR touch sensor (not the DAQ).
+   - Code: src/evexp/hardware/position.py (PositionSource interface,
+     PositionSample = t, x_mm, y_mm), src/evexp/hardware/neonode.py
+     (HidNeonodeTransport, NeonodeCalibration, NeonodePositionSource).
+   - Enabled with --neonode on run_gui.py. Without it, ManualPositionSource
+     uses the mouse instead 
+  - Used for: cursor_speed_mm_s / cursor_travel_mm timing and the
+     speed_tolerance_pct trial-validity check in experiment.yaml.
+
+2. FORCE sensor 
+   - Hardware: two ATI Nano17 6-axis force/torque sensors under the same
+     plate, read through the NI DAQ as raw gauge voltages (6 gauges each,
+     12 channels total).
+   - Code: src/evexp/hardware/force.py (ForceCalibration, DualForceCalibration,
+     GAIN_FS1/GAIN_FS2 matrices, AcquisitionForceSource), plus
+     src/evexp/hardware/nidaq.py for the DAQ channel wiring.
+   - Selected via force.source in experiment.yaml: "nano17" (live DAQ),
+     "mouse_y" (dev, pointer Y drives force), "simulated" (dev, drifting
+     signal, hands-off).
+   - With source: nano17 the reported number goes through GAIN_FS1/GAIN_FS2
+     (the real calibration matrices, see below), so it's an actual newton
+     reading, not raw volts.
+
+
+
+
+FORCE SENSOR CALIBRATION MATRICES (ATI Nano17)
+------------------------------------------------
+File: src/evexp/hardware/force.py, lines 20-38 (GAIN_FS1, GAIN_FS2, FLIP_Y)
+
+is_placeholder default: src/evexp/hardware/force.py:123
+(DualForceCalibration.from_gain_matrices)
+
+
+
+
+DAQ DEVICE / CHANNEL WIRING
+-----------------------------
+File: experiments/exp01_2afc_threshold/run_gui.py (command-line flags)
+
+IMPORTANT - these are DEFAULTS, not switches: --daq-fs1/--daq-fs2/--daq-stim/
+--monitor-channel do NOT turn any reading on or off. The code always reads
+FS1, FS2 and the amplifier monitor whenever --real-daq is passed - these
+flags only tell it WHICH physical DAQ device/pin each one is wired to. If
+the actual wiring matches the defaults below (Dev1/Dev3/Dev2, ai0), you
+never need to pass them at all - `--real-daq --neonode` alone is enough.
+You only need to override one of them if that specific cable/device name
+is different on the machine you're running on (e.g. NI MAX shows the
+stimulus card as "Dev4" instead of "Dev2").
+
+    --real-daq         use the real NI-DAQmx hardware (or an NI MAX
+                       simulated card) instead of MockDAQDevice /
+                       MockStimulusOutput. Default: mock, no hardware needed.
+    --daq-fs1          force sensor 1 card   (default: Dev1)
+    --daq-fs2          force sensor 2 card   (default: Dev3)
+    --daq-stim         card carrying BOTH the stimulus analog OUTPUT (the
+                       electrovibration signal sent to the amplifier) and
+                       the amplifier monitor INPUT (default: Dev2)
+    --monitor-channel  AI channel on --daq-stim that reads the amplifier's
+                       own "monitor" output, i.e. what the amplifier
+                       actually produced - not what we commanded it to
+                       produce (default: ai0). This is a feedback/QA signal:
+                       it's read back as the "current" channel
+                       (recording_controller.py) and shown live in the
+                       experimenter window so you can see the real
+                       delivered stimulus, independent of any amplifier
+                       clipping/fault/miswiring. It is NOT the stimulus
+                       output channel itself and NOT a force/position
+                       sensor - only wire it if the amplifier has a
+                       monitor/sense output to read.
+    --neonode          use the real Neonode IR sensor for finger position
+                       instead of the mouse (see TWO SEPARATE SENSING
+                       SYSTEMS above). Falls back to the mouse if the
+                       sensor cannot be opened.
+    --list-screens     print index + geometry of every connected monitor
+                       and exit; use this to find the right
+                       display.participant_screen_index before a real
+                       session.
+
+File: src/evexp/hardware/nidaq.py
+    gauge_channel_map() - which ai0..ai5 channels belong to which sensor's
+    6 gauges. Force sensor channels are differential (DIFF); the monitor
+    channel is single-ended (RSE). Note this DAQ wiring only carries the
+    force gauges + amplifier monitor - the Neonode position sensor is a
+    separate (HID) connection, not a DAQ channel.
+
+
+config/experiment.yaml - WHAT TO CHECK BEFORE A REAL SESSION
+----------------------------------------------------------------
+The file is organized in sections; the ones that actually need attention
+for a real (non-dev) session are:
+
+  display:
+    screen_width_mm / screen_height_mm - physical size of the touchscreen's
+    active area. MUST be re-measured with a ruler for the real deployment
+    screen; currently set for the dev laptop only. screen_width_px/height_px
+    must match the PHYSICAL resolution Windows reports for that screen (this
+    Qt build renders in physical pixels, not OS-scaled logical pixels).
+    participant_screen_index must be set once you know which monitor is
+    which (run with --list-screens to see indices).
+
+  staircase:
+    max_value is a hard safety ceiling on the DAQ analog output - the
+    amplifier multiplies it by 50x downstream, so this must NEVER be raised
+    without re-checking the amplifier/participant safety limits.
+
+  force:
+    source: nano17 vs mouse_y vs simulated - see TWO SEPARATE SENSING
+    SYSTEMS above. target_n / force_levels_n / full_scale_n are the
+    protocol's force conditions - changing them is a protocol change, not
+    just a config tweak, since force_levels_n also drives what's offered in
+    the setup dialog.
+
+  validity:
+    force_tolerance_pct / speed_tolerance_pct - how far the participant can
+    stray from the target force / speed before a trial is silently
+    discarded and re-presented. Worth sanity-checking against pilot data;
+    too tight and you burn trials, too loose and off-target trials
+    contaminate the threshold estimate.
+
+  acquisition:
+    sample_rate_hz - DAQ sampling rate for the force gauges + monitor
+    channel; changing this changes chunk_samples' derived default too.
+
+Everything else (timing, training, simulation, debug) is safe to leave at
+defaults for a first real run, but timing.speed_options_mm_s and
+force.force_levels_n are the two lists that must match whatever conditions
+are actually being tested in the protocol.
+
+
+KNOWN GAPS (before a real session)
+-------------------------------------
+1. Display calibration (config/experiment.yaml, display: section) is for
+   the dev laptop, not the deployment touchscreen - re-measure and update.
+2. Confirm --neonode is actually used for real sessions - forgetting it
+   silently falls back to mouse-driven position, which invalidates any
+   speed-based trial validity check.

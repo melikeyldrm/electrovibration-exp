@@ -57,13 +57,10 @@ python -m venv venv
 venv\Scripts\activate          # Windows
 # source venv/bin/activate     # macOS/Linux
 pip install -e .
-pip install pytest numpy PyQt5 pyyaml matplotlib nidaqmx hid
 ```
 
-`pyproject.toml` does not yet pin dependencies (see Known gaps below); the
-list above is what the codebase currently imports. `nidaqmx` and `hid` are
-only needed for real hardware (`--real-daq` / `--neonode`); everything else
-runs against mocked devices without them.
+`nidaqmx` and `hidapi` are only needed for real hardware (`--real-daq` /
+`--neonode`); everything else runs against mocked devices without them.
 
 ## Running
 
@@ -91,9 +88,11 @@ so it runs on a laptop with nothing plugged in. Useful flags:
 | Flag | Effect |
 |---|---|
 | `--real-daq` | Use real (or NI MAX-simulated) NI-DAQmx cards instead of the mock devices, for both acquisition and the stimulus. |
-| `--daq-fs1`, `--daq-fs2`, `--daq-stim` | NI-DAQmx device names for the two force-sensor cards and the stimulus/monitor card (defaults: `Dev1`, `Dev2`, `Dev3`). Only relevant with `--real-daq`. |
+| `--daq-fs1`, `--daq-fs2`, `--daq-stim` | NI-DAQmx device names for the two force-sensor cards and the stimulus/monitor card (defaults: `Dev1`, `Dev3`, `Dev2`). Only relevant with `--real-daq`. |
 | `--monitor-channel` | AI channel on the stimulus card reading the amplifier's monitor output (default `ai0`). |
 | `--neonode` | Track finger position with the Neonode IR sensor instead of the mouse; falls back to the mouse if the sensor can't be opened. |
+
+
 | `--list-screens` | Print index/geometry of every connected monitor, then exit — use this to find `display.participant_screen_index` before a real session, then Ctrl+C or close the window. |
 
 Ctrl+C and closing the participant window both trigger a clean shutdown
@@ -133,5 +132,3 @@ state machine, and data writers.
   reported newton value.
 - **Display calibration is for the dev laptop**, not the deployment
   touchscreen — see `config/experiment.yaml`'s `display` section.
-- **`pyproject.toml` has no pinned dependencies** — install the packages
-  listed under Setup manually until this is fixed.
