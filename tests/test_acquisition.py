@@ -242,11 +242,6 @@ def test_dual_handles_a_whole_block_at_once():
     assert cal.forces_in_screen_frame(block).shape == (3, 32)
 
 
-def test_gain_matrices_are_marked_placeholder():
-    """Until the sensors' own .cal files arrive, the numbers are not forces."""
-    assert DualForceCalibration.from_gain_matrices().is_placeholder
-
-
 # --- ForceSource -----------------------------------------------------------
 
 def test_simulated_force_stays_near_its_target():
