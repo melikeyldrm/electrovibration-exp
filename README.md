@@ -1,13 +1,13 @@
 # electrovibration-exp
 
-Psychophysics rig for measuring electrovibration detection thresholds on a
+Psychophysics setup for measuring electrovibration detection thresholds on a
 touchscreen, using a 2-alternative-forced-choice (2AFC) staircase procedure.
 A participant slides a finger through two intervals (one carries the
 electrovibration stimulus, one does not) and reports which one felt
 different. An adaptive staircase adjusts the stimulus voltage trial by trial
 to converge on the participant's detection threshold.
 
-The rig also records the participant's finger position and the normal force
+The setup also records the participant's finger position and the normal force
 they press with (via two ATI Nano17 force sensors), so trials can be
 reviewed for grip force, timing, and touch trajectory alongside the
 psychophysical response.

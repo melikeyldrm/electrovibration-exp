@@ -34,7 +34,8 @@ GAIN_FS2 = [
     [-0.76650, 7.03372, -0.09259, 7.02651, -0.52256, 7.07061],
 ]
 
-# Mounting rotation; matches Setup_FS1.5.py's Fy negation. Not yet validated.
+# Mounting rotation: negates Fy to match how the sensors are physically
+# oriented on the plate. Not yet validated.
 FLIP_Y = np.diag([1.0, -1.0, 1.0])
 
 
