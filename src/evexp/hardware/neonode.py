@@ -1,4 +1,4 @@
-"""Neonode NNAMC1580PCEV IR position sensor - PositionSource implementation.
+"""Neonode NNAMC2300PCEV IR position sensor - PositionSource implementation.
 
 Uses the vendor HID interface (usage page 0xFF00, zForce protocol), not the
 digitizer interface, which Windows reserves as a system pointing device.

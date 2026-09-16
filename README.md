@@ -125,10 +125,9 @@ state machine, and data writers.
 
 ## Known gaps / things to fix before a real session
 
-- **Force calibration is a placeholder.** The gain matrices in
-  [`src/evexp/hardware/force.py`](src/evexp/hardware/force.py) were carried
-  over from an earlier script, not read from the sensors' own `.cal` files;
-  `ForceCalibration.is_placeholder` marks this. Replace before trusting any
-  reported newton value.
 - **Display calibration is for the dev laptop**, not the deployment
   touchscreen — see `config/experiment.yaml`'s `display` section.
+
+Force calibration matrices (`GAIN_FS1`, `GAIN_FS2` in
+[`src/evexp/hardware/force.py`](src/evexp/hardware/force.py)) are the real
+per-sensor gains; update them there if a sensor is replaced or re-calibrated.

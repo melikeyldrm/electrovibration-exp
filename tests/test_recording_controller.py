@@ -70,7 +70,7 @@ def controller():
     acquisition = FakeAcquisition()
     writer = FakeWriter()
     controller = RecordingController(
-        acquisition, writer, DualForceCalibration.placeholder(),
+        acquisition, writer, DualForceCalibration.identity(),
         force_bands=None, log_fn=lambda msg: None,
     )
     return controller, acquisition, writer
@@ -142,7 +142,7 @@ def test_new_trial_clears_previous_captures():
     acquisition = FakeAcquisition()
     writer = FakeWriter()
     controller = RecordingController(
-        acquisition, writer, DualForceCalibration.placeholder(),
+        acquisition, writer, DualForceCalibration.identity(),
         log_fn=lambda msg: None,
     )
     controller.mark_interval1_start()
@@ -167,7 +167,7 @@ def test_empty_window_skips_that_interval_only():
     acquisition = EmptyWindowAcquisition()
     writer = FakeWriter()
     controller = RecordingController(
-        acquisition, writer, DualForceCalibration.placeholder(),
+        acquisition, writer, DualForceCalibration.identity(),
         log_fn=lambda msg: None,
     )
     controller.mark_interval1_start()
@@ -217,7 +217,7 @@ def test_current_channel_passed_through_when_present():
     acquisition = FakeAcquisition(channels=ALL_GAUGE_CHANNELS + ("current",))
     writer = FakeWriter()
     controller = RecordingController(
-        acquisition, writer, DualForceCalibration.placeholder(),
+        acquisition, writer, DualForceCalibration.identity(),
         log_fn=lambda msg: None,
     )
     controller.mark_interval1_start()

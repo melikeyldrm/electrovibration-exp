@@ -48,7 +48,6 @@ class ForceCalibration:
     force_units: str = "N"
     torque_units: str = "N-mm"
     serial: str = ""
-    is_placeholder: bool = False
 
     def __post_init__(self) -> None:
         if self.matrix.shape != (6, 6):
@@ -59,15 +58,14 @@ class ForceCalibration:
             raise ValueError(f"mounting must be 3x3, got {self.mounting.shape}")
 
     @classmethod
-    def placeholder(cls) -> "ForceCalibration":
-        return cls(matrix=np.eye(6), is_placeholder=True)
+    def identity(cls) -> "ForceCalibration":
+        return cls(matrix=np.eye(6))
 
     def with_bias(self, bias: Sequence[float]) -> "ForceCalibration":
         return ForceCalibration(
             matrix=self.matrix, bias=np.asarray(bias, dtype=float),
             mounting=self.mounting, force_units=self.force_units,
             torque_units=self.torque_units, serial=self.serial,
-            is_placeholder=self.is_placeholder,
         )
 
     def with_mounting(self, rotation: np.ndarray) -> "ForceCalibration":
@@ -75,7 +73,7 @@ class ForceCalibration:
             matrix=self.matrix, bias=self.bias,
             mounting=np.asarray(rotation, dtype=float),
             force_units=self.force_units, torque_units=self.torque_units,
-            serial=self.serial, is_placeholder=self.is_placeholder,
+            serial=self.serial,
         )
 
     def wrench(self, gauge_volts: np.ndarray) -> np.ndarray:
@@ -100,8 +98,6 @@ class ForceCalibration:
 
     def describe(self) -> str:
         label = self.serial or "unknown sensor"
-        if self.is_placeholder:
-            return f"{label}: PLACEHOLDER calibration - not real forces"
         biased = "biased" if np.any(self.bias) else "unbiased"
         rotated = "rotated" if not np.allclose(self.mounting, np.eye(3)) \
             else "unrotated"
@@ -119,24 +115,19 @@ class DualForceCalibration:
 
     @classmethod
     def from_gain_matrices(cls, gain_fs1=GAIN_FS1, gain_fs2=GAIN_FS2,
-                           mounting: np.ndarray = FLIP_Y,
-                           is_placeholder: bool = False) -> "DualForceCalibration":
+                           mounting: np.ndarray = FLIP_Y) -> "DualForceCalibration":
         def one(gain, serial):
             return ForceCalibration(
                 matrix=np.asarray(gain, dtype=float),
                 mounting=np.asarray(mounting, dtype=float),
-                serial=serial, is_placeholder=is_placeholder,
+                serial=serial,
             )
         return cls(fs1=one(gain_fs1, "FS1"), fs2=one(gain_fs2, "FS2"))
 
     @classmethod
-    def placeholder(cls) -> "DualForceCalibration":
-        return cls(fs1=ForceCalibration.placeholder(),
-                   fs2=ForceCalibration.placeholder())
-
-    @property
-    def is_placeholder(self) -> bool:
-        return self.fs1.is_placeholder or self.fs2.is_placeholder
+    def identity(cls) -> "DualForceCalibration":
+        return cls(fs1=ForceCalibration.identity(),
+                   fs2=ForceCalibration.identity())
 
     def with_bias(self, bias_fs1: Sequence[float],
                   bias_fs2: Sequence[float]) -> "DualForceCalibration":

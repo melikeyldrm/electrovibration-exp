@@ -9,8 +9,8 @@ from evexp.hardware.position import PositionSample
 
 
 @pytest.fixture
-def placeholder_calibration():
-    return DualForceCalibration.placeholder()
+def identity_calibration():
+    return DualForceCalibration.identity()
 
 
 def _read_rows(path):
@@ -18,21 +18,21 @@ def _read_rows(path):
         return list(csv.DictReader(f))
 
 
-def test_creates_file_only_after_write_trial(tmp_path, placeholder_calibration):
+def test_creates_file_only_after_write_trial(tmp_path, identity_calibration):
     writer = RawTrialWriter(tmp_path, participant_id="003", speed_mm_s=50.0,
                              stamp="20260101_000000")
     path = writer._trial_path(0)
     assert not path.exists()
 
     writer.write_trial(0, np.zeros((12, 10)), np.zeros((12, 10)),
-                        placeholder_calibration, sample_rate_hz=10000.0,
+                        identity_calibration, sample_rate_hz=10000.0,
                         t0_interval1=0.0, t0_interval2=1.0,
                         voltage_interval1=0.0, voltage_interval2=1.5,
                         stimulus_interval=2)
     assert path.exists()
 
 
-def test_filename_format(tmp_path, placeholder_calibration):
+def test_filename_format(tmp_path, identity_calibration):
     writer = RawTrialWriter(tmp_path, participant_id="003", speed_mm_s=50.0,
                              stamp="20260101_000000")
     path = writer._trial_path(7)
@@ -40,12 +40,12 @@ def test_filename_format(tmp_path, placeholder_calibration):
     assert path.parent.name == "p003"
 
 
-def test_columns_and_row_count(tmp_path, placeholder_calibration):
+def test_columns_and_row_count(tmp_path, identity_calibration):
     writer = RawTrialWriter(tmp_path, participant_id="003", speed_mm_s=50.0,
                              stamp="stamp")
     n1, n2 = 100, 150
     writer.write_trial(0, np.zeros((12, n1)), np.zeros((12, n2)),
-                        placeholder_calibration, sample_rate_hz=10000.0,
+                        identity_calibration, sample_rate_hz=10000.0,
                         t0_interval1=0.0, t0_interval2=1.0,
                         voltage_interval1=1.0, voltage_interval2=0.0,
                         stimulus_interval=1)
@@ -59,11 +59,11 @@ def test_columns_and_row_count(tmp_path, placeholder_calibration):
     assert sum(1 for r in rows if r["interval"] == "2") == n2
 
 
-def test_actuation_marks_stimulus_interval(tmp_path, placeholder_calibration):
+def test_actuation_marks_stimulus_interval(tmp_path, identity_calibration):
     writer = RawTrialWriter(tmp_path, participant_id="003", speed_mm_s=50.0,
                              stamp="stamp")
     writer.write_trial(0, np.zeros((12, 10)), np.zeros((12, 10)),
-                        placeholder_calibration, sample_rate_hz=10000.0,
+                        identity_calibration, sample_rate_hz=10000.0,
                         t0_interval1=0.0, t0_interval2=1.0,
                         voltage_interval1=0.0, voltage_interval2=1.5,
                         stimulus_interval=2)
@@ -75,11 +75,11 @@ def test_actuation_marks_stimulus_interval(tmp_path, placeholder_calibration):
 
 
 def test_voltage_channel_holds_commanded_value_per_interval(
-        tmp_path, placeholder_calibration):
+        tmp_path, identity_calibration):
     writer = RawTrialWriter(tmp_path, participant_id="003", speed_mm_s=50.0,
                              stamp="stamp")
     writer.write_trial(0, np.zeros((12, 10)), np.zeros((12, 10)),
-                        placeholder_calibration, sample_rate_hz=10000.0,
+                        identity_calibration, sample_rate_hz=10000.0,
                         t0_interval1=0.0, t0_interval2=1.0,
                         voltage_interval1=0.0, voltage_interval2=1.75,
                         stimulus_interval=2)
@@ -90,7 +90,7 @@ def test_voltage_channel_holds_commanded_value_per_interval(
     assert len(v2) == 1 and v2.pop() == pytest.approx(1.75)
 
 
-def test_speed_derived_and_held_from_positions(tmp_path, placeholder_calibration):
+def test_speed_derived_and_held_from_positions(tmp_path, identity_calibration):
     writer = RawTrialWriter(tmp_path, participant_id="003", speed_mm_s=50.0,
                              stamp="stamp")
     n = 100  # 100 samples at 10 kHz over interval 1 -> 0.01 s window
@@ -101,7 +101,7 @@ def test_speed_derived_and_held_from_positions(tmp_path, placeholder_calibration
         PositionSample(t=0.005, x_mm=1.0),
     ]
     writer.write_trial(0, np.zeros((12, n)), np.zeros((12, n)),
-                        placeholder_calibration, sample_rate_hz=10000.0,
+                        identity_calibration, sample_rate_hz=10000.0,
                         t0_interval1=0.0, t0_interval2=1.0,
                         voltage_interval1=0.0, voltage_interval2=0.0,
                         stimulus_interval=1, positions1=positions)
@@ -113,11 +113,11 @@ def test_speed_derived_and_held_from_positions(tmp_path, placeholder_calibration
     assert all(v == pytest.approx(200.0) for v in interval1_speed[50:])
 
 
-def test_no_positions_gives_nan_speed(tmp_path, placeholder_calibration):
+def test_no_positions_gives_nan_speed(tmp_path, identity_calibration):
     writer = RawTrialWriter(tmp_path, participant_id="003", speed_mm_s=50.0,
                              stamp="stamp")
     writer.write_trial(0, np.zeros((12, 20)), np.zeros((12, 20)),
-                        placeholder_calibration, sample_rate_hz=10000.0,
+                        identity_calibration, sample_rate_hz=10000.0,
                         t0_interval1=0.0, t0_interval2=1.0,
                         voltage_interval1=0.0, voltage_interval2=0.0,
                         stimulus_interval=1)
@@ -125,11 +125,11 @@ def test_no_positions_gives_nan_speed(tmp_path, placeholder_calibration):
     assert all(np.isnan(float(r["speed_mm_s"])) for r in rows)
 
 
-def test_current_defaults_to_nan_when_not_provided(tmp_path, placeholder_calibration):
+def test_current_defaults_to_nan_when_not_provided(tmp_path, identity_calibration):
     writer = RawTrialWriter(tmp_path, participant_id="003", speed_mm_s=50.0,
                              stamp="stamp")
     writer.write_trial(0, np.zeros((12, 5)), np.zeros((12, 5)),
-                        placeholder_calibration, sample_rate_hz=10000.0,
+                        identity_calibration, sample_rate_hz=10000.0,
                         t0_interval1=0.0, t0_interval2=1.0,
                         voltage_interval1=0.0, voltage_interval2=0.0,
                         stimulus_interval=1)
@@ -137,12 +137,12 @@ def test_current_defaults_to_nan_when_not_provided(tmp_path, placeholder_calibra
     assert all(np.isnan(float(r["current_a"])) for r in rows)
 
 
-def test_current_channel_written_when_provided(tmp_path, placeholder_calibration):
+def test_current_channel_written_when_provided(tmp_path, identity_calibration):
     writer = RawTrialWriter(tmp_path, participant_id="003", speed_mm_s=50.0,
                              stamp="stamp")
     current1 = np.full(5, 0.42)
     writer.write_trial(0, np.zeros((12, 5)), np.zeros((12, 5)),
-                        placeholder_calibration, sample_rate_hz=10000.0,
+                        identity_calibration, sample_rate_hz=10000.0,
                         t0_interval1=0.0, t0_interval2=1.0,
                         voltage_interval1=0.0, voltage_interval2=0.0,
                         stimulus_interval=1, current1=current1)
@@ -172,23 +172,23 @@ def test_forces_use_the_calibration(tmp_path):
     assert all(float(r["fz"]) == pytest.approx(15.0) for r in rows)
 
 
-def test_wrong_gauge_shape_raises(tmp_path, placeholder_calibration):
+def test_wrong_gauge_shape_raises(tmp_path, identity_calibration):
     writer = RawTrialWriter(tmp_path, participant_id="003", speed_mm_s=50.0,
                              stamp="stamp")
     with pytest.raises(ValueError):
         writer.write_trial(0, np.zeros((6, 10)), np.zeros((12, 10)),
-                            placeholder_calibration, sample_rate_hz=10000.0,
+                            identity_calibration, sample_rate_hz=10000.0,
                             t0_interval1=0.0, t0_interval2=1.0,
                             voltage_interval1=0.0, voltage_interval2=0.0,
                             stimulus_interval=1)
 
 
-def test_multiple_trials_each_get_their_own_file(tmp_path, placeholder_calibration):
+def test_multiple_trials_each_get_their_own_file(tmp_path, identity_calibration):
     writer = RawTrialWriter(tmp_path, participant_id="003", speed_mm_s=50.0,
                              stamp="stamp")
     for i in range(3):
         writer.write_trial(i, np.zeros((12, 10)), np.zeros((12, 10)),
-                            placeholder_calibration, sample_rate_hz=10000.0,
+                            identity_calibration, sample_rate_hz=10000.0,
                             t0_interval1=0.0, t0_interval2=1.0,
                             voltage_interval1=0.0, voltage_interval2=0.0,
                             stimulus_interval=1)

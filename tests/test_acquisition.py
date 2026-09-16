@@ -138,14 +138,8 @@ def test_realtime_mode_paces_the_reader():
 
 # --- ForceCalibration ------------------------------------------------------
 
-def test_placeholder_calibration_announces_itself():
-    cal = ForceCalibration.placeholder()
-    assert cal.is_placeholder
-    assert "PLACEHOLDER" in cal.describe()
-
-
-def test_placeholder_passes_volts_through_unchanged():
-    cal = ForceCalibration.placeholder()
+def test_identity_calibration_passes_volts_through_unchanged():
+    cal = ForceCalibration.identity()
     volts = np.arange(6, dtype=float)
     assert cal.wrench(volts).tolist() == pytest.approx(volts.tolist())
 
@@ -157,7 +151,7 @@ def test_calibration_matrix_must_be_six_by_six():
 
 def test_gain_fs1_constant_builds_a_valid_calibration():
     from evexp.hardware.force import GAIN_FS1
-    cal = ForceCalibration(matrix=np.array(GAIN_FS1), is_placeholder=True)
+    cal = ForceCalibration(matrix=np.array(GAIN_FS1))
     assert cal.matrix.shape == (6, 6)
 
 
@@ -224,20 +218,20 @@ def test_dual_keeps_the_sensors_apart_before_summing():
 
 
 def test_dual_rejects_a_single_sensor_block():
-    cal = DualForceCalibration.placeholder()
+    cal = DualForceCalibration.identity()
     with pytest.raises(ValueError):
         cal.normal_force(np.zeros(6))
 
 
 def test_dual_bias_applies_per_sensor():
-    cal = DualForceCalibration.placeholder().with_bias(
+    cal = DualForceCalibration.identity().with_bias(
         np.full(6, 1.0), np.full(6, 4.0))
     volts = np.concatenate([np.full(6, 2.0), np.full(6, 5.0)])
     assert cal.normal_force(volts) == pytest.approx(2.0)
 
 
 def test_dual_handles_a_whole_block_at_once():
-    cal = DualForceCalibration.placeholder()
+    cal = DualForceCalibration.identity()
     block = np.ones((12, 32))
     assert cal.forces_in_screen_frame(block).shape == (3, 32)
 
