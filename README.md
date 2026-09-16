@@ -195,3 +195,7 @@ trial state machine, and data writers.
 - **Display calibration is for the dev laptop**, not the deployment
   touchscreen — must be re-measured and updated in the `display` section
   of `config/experiment.yaml`.
+
+## Acknowledgment
+
+Claude (Anthropic) was used as a coding assistant during the development of this project.
