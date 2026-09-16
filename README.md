@@ -144,7 +144,7 @@ All session-specific settings live in a single file:
   cursor speed and travel distance (interval duration is derived from
   these).
 - **`force`** — Target force, feedback color band, and the force source
-  (`source: nano17` for the real sensors, `simulated` for a fake signal,
+  (`source: nano17` for the real sensors, `simulated` for a mock signal,
   `mouse_y` for development via mouse control).
 - **`validity`** — How far force or speed can drift from target before a
   trial is discarded and re-presented at the same level. Invalid trials do
@@ -153,7 +153,7 @@ All session-specific settings live in a single file:
 - **`acquisition`** — DAQ sample rate and the in-memory ring buffer length.
 - **`training`** — Number of practice trials before the real measurement,
   and their voltage.
-- **`simulation`** — Fake-participant parameters used only by the headless
+- **`simulation`** — Simulated-participant parameters used only by the headless
   quick check (`run.py`); has no effect on a real session.
 
 Every section is commented in place in the file; read the relevant comments
