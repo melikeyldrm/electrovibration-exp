@@ -16,6 +16,12 @@ from evexp.hardware.safety import check_voltage_limit
 from evexp.processing.signal import cycles_to_duration_s, generate_sine_wave
 
 
+# NOTE: the real session (run_gui.py) does not use gauge_channel_map() or
+# the DEFAULT_* constants below - it builds channel_map/ao_channel from
+# config/experiment.yaml's daq: section instead, so the actual lab wiring
+# lives in one place. These exist as fallback defaults for NiDaqDevice's
+# other callers: scripts/watch_lag.py, scripts/ao_demo.py, and the tests.
+
 def gauge_channel_map(prefix: str, first_ai: int = 0) -> dict:
     """Six gauges of one sensor -> ai channels, named by which sensor it is."""
     return {f"{prefix}_gauge{i}": f"ai{first_ai + i}" for i in range(6)}
