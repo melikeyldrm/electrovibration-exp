@@ -81,7 +81,7 @@ force:
   # "simulated": hands-off drifting signal. "nano17": live DAQ reading,
   # still reporting raw volts as newtons until the real .cal file replaces
   # ForceCalibration.placeholder().
-  source: nano17 #nano17 or simulated
+  source: mouse_y #nano17 or simulated
 
 validity:
   # A trial is discarded (not logged, not fed to the staircase, presented
@@ -96,6 +96,38 @@ acquisition:
   ring_seconds: 30
   # Samples per device read. Left empty to derive ~50 ms from the sample rate.
   chunk_samples:
+
+# Physical NI-DAQ cards and which channel on each one does what. There are
+# three cards involved; set enabled: true and wire them up here before a
+# real session (run_gui.py --list-screens/--neonode still work either way).
+# With enabled: false, run_gui.py uses MockDAQDevice/MockStimulusOutput and
+# none of the fields below are read.
+daq:
+  enabled: true
+
+  # Sets the stimulus voltage (ao0) and reads the amplifier's current
+  # monitor output (ai0). This is the same physical card for both, since
+  # the amplifier's current feedback and the voltage it's amplifying are
+  # naturally on one card together.
+  stimulus_card:
+    device: Dev2
+    voltage_set_channel: ao0    # stimulus voltage is SET here
+    current_read_channel: ai0   # amplifier current monitor is READ here
+    terminal_config: RSE        # monitor input is single-ended
+
+  # Force sensor 1 (ATI Nano17 #1): 6 strain-gauge bridges, one per ai
+  # channel, converted to newtons via GAIN_FS1 in hardware/force.py.
+  force_sensor_1:
+    device: Dev1
+    ai_channels: [ai0, ai1, ai2, ai3, ai4, ai5]
+    terminal_config: DIFF       # gauge bridges are differential
+
+  # Force sensor 2 (ATI Nano17 #2): same wiring as force_sensor_1, on its
+  # own card, converted to newtons via GAIN_FS2 in hardware/force.py.
+  force_sensor_2:
+    device: Dev3
+    ai_channels: [ai0, ai1, ai2, ai3, ai4, ai5]
+    terminal_config: DIFF
 
 training:
   n_trials: 3

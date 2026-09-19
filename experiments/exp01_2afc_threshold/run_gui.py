@@ -21,7 +21,7 @@ from evexp.hardware.multi_daq import MultiDaqDevice
 from evexp.hardware.neonode import (HidNeonodeTransport, NeonodeCalibration,
                                     NeonodeConnectionError,
                                     NeonodePositionSource)
-from evexp.hardware.nidaq import NiDaqDevice, gauge_channel_map
+from evexp.hardware.nidaq import NiDaqDevice
 from evexp.processing.force_feedback import ForceBands
 from evexp.hardware.screen import ScreenCalibration
 from evexp.psychophysics.staircase import StaircaseConfig, StaircaseController
@@ -32,6 +32,13 @@ from evexp.ui.session_controller import SessionController
 from evexp.ui.setup_dialog import ask_for_setup
 
 CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "experiment.yaml"
+
+
+def _gauge_channel_map_from_config(prefix: str, ai_channels: list) -> dict:
+    """config/experiment.yaml's daq.force_sensor_N.ai_channels -> channel_map,
+    named by which sensor it is (see gauge_channel_map() in hardware/nidaq.py
+    for the equivalent used by non-config-driven callers)."""
+    return {f"{prefix}_gauge{i}": ch for i, ch in enumerate(ai_channels)}
 
 
 def write_config_snapshot(cfg: dict, path: Path) -> None:
@@ -47,30 +54,6 @@ def write_config_snapshot(cfg: dict, path: Path) -> None:
 
 def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--real-daq", action="store_true",
-        help="Use NiDaqDevice (real or NI MAX simulated card) instead of "
-             "MockDAQDevice/MockStimulusOutput for both acquisition and "
-             "the stimulus. Default: mock, no hardware needed."
-    )
-    parser.add_argument(
-        "--daq-fs1", default="Dev1",
-        help="NI-DAQmx device reading force sensor 1. Only with --real-daq."
-    )
-    parser.add_argument(
-        "--daq-fs2", default="Dev3",
-        help="NI-DAQmx device reading force sensor 2. Only with --real-daq."
-    )
-    parser.add_argument(
-        "--daq-stim", default="Dev2",
-        help="NI-DAQmx device carrying the stimulus AO and the amplifier "
-             "monitor input. Only with --real-daq."
-    )
-    parser.add_argument(
-        "--monitor-channel", default="ai0",
-        help="AI channel on the stimulus card reading the amplifier's "
-             "monitor output."
-    )
     parser.add_argument(
         "--neonode", action="store_true",
         help="Track finger position with the Neonode IR sensor instead of "
@@ -148,27 +131,34 @@ def main():
     print(f"Participant {participant_id}, sliding speed {cue_speed_mm_s:g} mm/s, "
           f"target force {target_force_n:g} N")
 
-    if args.real_daq:
+    daq_cfg = cfg.get("daq", {})
+    if daq_cfg.get("enabled", False):
+        stim_cfg = daq_cfg["stimulus_card"]
+        fs1_cfg = daq_cfg["force_sensor_1"]
+        fs2_cfg = daq_cfg["force_sensor_2"]
+
         # ao_voltage_limit_v ties the AO hardware range to the staircase ceiling.
-        # Monitor input is single-ended (RSE); the force sensor gauges are differential.
         stimulus_card = NiDaqDevice(
-            device_name=args.daq_stim,
-            channel_map={"current": args.monitor_channel},
-            terminal_config="RSE",
+            device_name=stim_cfg["device"],
+            ao_channel=stim_cfg["voltage_set_channel"],
+            channel_map={"current": stim_cfg["current_read_channel"]},
+            terminal_config=stim_cfg["terminal_config"],
             ao_voltage_limit_v=cfg["staircase"]["max_value"],
         )
         acquisition_device = MultiDaqDevice([
-            NiDaqDevice(device_name=args.daq_fs1,
-                        channel_map=gauge_channel_map("fs1"),
-                        terminal_config="DIFF"),
-            NiDaqDevice(device_name=args.daq_fs2,
-                        channel_map=gauge_channel_map("fs2"),
-                        terminal_config="DIFF"),
+            NiDaqDevice(device_name=fs1_cfg["device"],
+                        channel_map=_gauge_channel_map_from_config("fs1", fs1_cfg["ai_channels"]),
+                        terminal_config=fs1_cfg["terminal_config"]),
+            NiDaqDevice(device_name=fs2_cfg["device"],
+                        channel_map=_gauge_channel_map_from_config("fs2", fs2_cfg["ai_channels"]),
+                        terminal_config=fs2_cfg["terminal_config"]),
             stimulus_card,
         ])
         stimulus_output = stimulus_card
-        print(f"DAQ: {args.daq_fs1} (FS1) + {args.daq_fs2} (FS2) + "
-              f"{args.daq_stim} (stimulus, monitor on {args.monitor_channel})")
+        print(f"DAQ: {fs1_cfg['device']} (FS1) + {fs2_cfg['device']} (FS2) + "
+              f"{stim_cfg['device']} (stimulus: voltage set on "
+              f"{stim_cfg['voltage_set_channel']}, current read on "
+              f"{stim_cfg['current_read_channel']})")
     else:
         acquisition_device = MockDAQDevice(realtime=True)
         stimulus_output = MockStimulusOutput(verbose=False)
@@ -247,7 +237,7 @@ def main():
     acquisition.start(sample_rate_hz=acq_cfg["sample_rate_hz"])
     print(f"Acquisition: {len(acquisition.channels)} channels at "
           f"{acquisition.sample_rate_hz:g} Hz "
-          f"({'real/NI MAX' if args.real_daq else 'simulated'})")
+          f"({'real/NI MAX' if daq_cfg.get('enabled', False) else 'simulated'})")
 
     print("Measuring force bias (nothing touching the sensors)...")
     bias_fs1, bias_fs2 = measure_dual_bias(acquisition, n_samples=100)
@@ -280,7 +270,7 @@ def main():
         print(acquisition.stats().describe())
         print(f"Invalid trials discarded: {controller.n_invalid}")
         # AO task is not closed by acquisition.stop(); close it explicitly.
-        if args.real_daq and stimulus_output.is_active:
+        if daq_cfg.get("enabled", False) and stimulus_output.is_active:
             stimulus_output.stimulus_off()
 
     app.aboutToQuit.connect(shutdown)

@@ -28,12 +28,15 @@ A real session involves the following physical devices:
 
 - **Touchscreen** — 3M SCT3250, the participant-facing display the
   electrovibration stimulus is rendered on.
-- **Data acquisition card** — NI PCIe-6321. Carries the stimulus analog
-  output and the amplifier's monitor input, plus the raw gauge voltages
-  from both force sensors. Device names are configurable (`--daq-fs1`,
-  `--daq-fs2`, `--daq-stim`), defaulting to `Dev1`/`Dev3`/`Dev2`. See
-  [`src/evexp/hardware/nidaq.py`](src/evexp/hardware/nidaq.py) for the
-  channel wiring.
+- **Data acquisition card** — actually three NI PCIe-6321 cards. One
+  carries the stimulus analog output and the amplifier's current monitor
+  input; the other two each carry the raw gauge voltages from one force
+  sensor. Which physical device (`Dev1`/`Dev2`/`Dev3`) and which channel
+  (`ao0`/`ai0`/...) does what is set in the `daq:` section of
+  [`config/experiment.yaml`](config/experiment.yaml) — that's the one
+  place to check or change the wiring before a real session. See
+  [`src/evexp/hardware/nidaq.py`](src/evexp/hardware/nidaq.py) for how
+  those config values become NI-DAQmx tasks.
 - **High-voltage amplifier** — Tabor Electronics 9200A. Amplifies the
   DAQ's stimulus output to the voltage actually delivered to the
   touchscreen.
@@ -48,9 +51,9 @@ A real session involves the following physical devices:
   with `--neonode`; without it, the mouse pointer is used instead. See
   [`src/evexp/hardware/neonode.py`](src/evexp/hardware/neonode.py).
 
-Without `--real-daq`/`--neonode`, `run_gui.py` runs entirely against mocked
-devices, so development doesn't require any of this hardware to be
-attached.
+With `daq.enabled: false` in the config (the default) and without
+`--neonode`, `run_gui.py` runs entirely against mocked devices, so
+development doesn't require any of this hardware to be attached.
 
 ## 3. Installation
 
@@ -64,7 +67,7 @@ pip install -e .
 ```
 
 `nidaqmx` and `hidapi` are installed as regular dependencies, but they're
-only exercised when using real hardware (`--real-daq` / `--neonode`);
+only exercised when using real hardware (`daq.enabled: true` / `--neonode`);
 everything else runs against mocked devices without needing them.
 
 ## 4. Running It
@@ -90,13 +93,14 @@ python experiments/exp01_2afc_threshold/run_gui.py
 ```
 
 By default this uses mocked DAQ hardware and the mouse for finger position,
-so it runs on a laptop with nothing plugged in. Useful command-line flags:
+so it runs on a laptop with nothing plugged in. Set `daq.enabled: true` in
+`config/experiment.yaml` to use the real (or NI MAX-simulated) NI-DAQmx
+cards instead, and check the device/channel wiring in that same `daq:`
+section first (see [Hardware](#2-hardware) above). Useful command-line
+flags:
 
 | Flag | Effect |
 |---|---|
-| `--real-daq` | Use real (or NI MAX-simulated) NI-DAQmx cards instead of the mock devices, for both acquisition and stimulus generation. |
-| `--daq-fs1`, `--daq-fs2`, `--daq-stim` | NI-DAQmx device names for the two force-sensor cards and the stimulus/monitor card (defaults: `Dev1`, `Dev3`, `Dev2`). Only relevant with `--real-daq`. |
-| `--monitor-channel` | Analog input channel read as "current" (default `ai0`); reads whichever channel is currently connected. |
 | `--neonode` | Track finger position with the Neonode IR sensor instead of the mouse; falls back to the mouse if the sensor can't be opened. |
 | `--list-screens` | Print index/geometry of every connected monitor, then exit — use this to find `display.participant_screen_index` in the config before a real session. |
 
